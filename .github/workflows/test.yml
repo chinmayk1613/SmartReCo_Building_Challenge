@@ -13,5 +13,5 @@ jobs:
           cache: pip
       - run: pip install -r requirements.txt
       - run: python -m compileall -q app scripts
-      - run: python -m pytest --cov=app --cov-report=term-missin
+      - run: python -m pytest --cov=app --cov-report=term-missing
 
