@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Observability &mdash; SmartReco{% endblock %}
+{% block content %}
+<section class="shell admin-page observability-page" data-observability-root data-selected-date="{{ selected_date }}">
+  <div class="section-heading">
+    <div><span class="eyebrow">Agent observability</span><h1>Cost, model, and service telemetry</h1><p>Durable local evidence for every learner-scoped LLM, RAG, MCP, signal, and LangGraph call.</p></div>
+    <div class="observability-live-state"><small>Updated <time data-observability-updated>now</time></small><span class="status {{ 'good' if langsmith_connected else 'warn' }}">LangSmith {{ 'connected' if langsmith_connected else 'awaiting separate key' }}</span></div>
+  </div>
+  <form class="observability-filter" method="get"><label>Filter all telemetry by UTC date<select name="date"><option value="">All recorded dates</option>{% for available_date in available_dates %}<option value="{{ available_date }}" {{ 'selected' if selected_date == available_date }}>{{ available_date }} UTC</option>{% endfor %}</select></label><button class="button button-small" type="submit">Apply date</button>{% if selected_date %}<a href="/admin/observability">Clear</a>{% endif %}</form>
+  {% if selected_date %}<div class="filter-notice">Showing all learners and services recorded on <strong>{{ selected_date }} UTC</strong>. Live updates remain scoped to this date until you clear or change it.</div>{% endif %}
+
+  <div class="metric-grid observability-metrics">
+    <div class="metric observability-kpi"><span>LLM provider attempts</span><strong data-observe-metric="llm_calls">{{ metrics.llm_calls }}</strong><small data-observe-llm-detail>{{ reconciliation.matched_spans }} matched spans &middot; {{ reconciliation.pending_attempts + reconciliation.delayed_attempts }} awaiting</small><button type="button" class="metric-detail-button" data-kpi-detail="llm_calls">Show details <b>&nearr;</b></button></div>
+    <div class="metric observability-kpi"><span>Total tokens</span><strong data-observe-metric="total_tokens">{{ metrics.total_tokens }}</strong><small data-observe-token-detail>{{ metrics.input_tokens }} in &middot; {{ metrics.output_tokens }} out</small><button type="button" class="metric-detail-button" data-kpi-detail="total_tokens">Show details <b>&nearr;</b></button></div>
+    <div class="metric observability-kpi"><span>Tentative cost</span><strong data-observe-metric="estimated_cost">${{ '%.6f'|format(metrics.estimated_cost) }}</strong><small>Free model is $0; unknown prices are not guessed</small><button type="button" class="metric-detail-button" data-kpi-detail="estimated_cost">Show details <b>&nearr;</b></button></div>
+    <div class="metric observability-kpi"><span>RAG retrievals</span><strong data-observe-metric="rag_calls">{{ metrics.rag_calls }}</strong><small>Vector + behavioral ranking</small><button type="button" class="metric-detail-button" data-kpi-detail="rag_calls">Show details <b>&nearr;</b></button></div>
+    <div class="metric observability-kpi"><span>MCP tool calls</span><strong data-observe-metric="mcp_calls">{{ metrics.mcp_calls }}</strong><small>Actual server tool executions</small><button type="button" class="metric-detail-button" data-kpi-detail="mcp_calls">Show details <b>&nearr;</b></button></div>
+    <div class="metric observability-kpi"><span>LangGraph runs</span><strong data-observe-metric="graph_runs">{{ metrics.graph_runs }}</strong><small>Checkpointed workflow executions</small><button type="button" class="metric-detail-button" data-kpi-detail="graph_runs">Show details <b>&nearr;</b></button></div>
+    <div class="metric observability-kpi"><span>Average latency</span><strong data-observe-metric="average_latency">{{ metrics.average_latency }} ms</strong><small>Completed service calls</small><button type="button" class="metric-detail-button" data-kpi-detail="average_latency">Show details <b>&nearr;</b></button></div>
+    <div class="metric observability-kpi"><span>Failures</span><strong data-observe-metric="failures">{{ metrics.failures }}</strong><small>Visible, never silently discarded</small><button type="button" class="metric-detail-button" data-kpi-detail="failures">Show details <b>&nearr;</b></button></div>
+  </div>
+
+  <div class="telemetry-summary">
+    <section><h2>Service calls</h2><div class="service-chips" data-service-counts>{% for name, count in service_counts.items() %}<span><strong>{{ count }}</strong>{{ name|upper }}</span>{% else %}<p class="muted">No calls recorded yet.</p>{% endfor %}</div></section>
+    <section><h2>Models invoked</h2><div class="service-chips" data-model-counts>{% for name, count in model_counts.items() %}<span><strong>{{ count }}</strong>{{ name }}</span>{% else %}<p class="muted">No model calls recorded yet.</p>{% endfor %}</div></section>
+    <section class="reconciliation-summary" data-reconciliation-summary>
+      <div class="reconciliation-heading"><h2>LangSmith reconciliation</h2><span class="status {{ 'good' if reconciliation.status == 'healthy' else 'warn' if reconciliation.status in ['pending', 'neutral'] else 'bad' }}" data-reconciliation-status>{{ reconciliation.status }}</span></div>
+      <p data-reconciliation-message>{{ reconciliation.message }}</p>
+      <div class="reconciliation-counts"><span><strong data-reconciliation-attempts>{{ reconciliation.provider_attempts }}</strong> provider attempts</span><span><strong data-reconciliation-matched>{{ reconciliation.matched_spans }}</strong> matched</span><span><strong data-reconciliation-pending>{{ reconciliation.pending_attempts }}</strong> pending</span><span><strong data-reconciliation-delayed>{{ reconciliation.delayed_attempts }}</strong> delayed</span></div>
+      <small>Project <strong>{{ langsmith_project }}</strong> &middot; span <code>{{ reconciliation.span_name }}</code> &middot; checked <time data-reconciliation-checked>{{ reconciliation.last_checked_at|utc_time if reconciliation.last_checked_at else 'not yet' }}</time>{% if reconciliation.last_checked_at %} UTC{% endif %}</small>
+    </section>
+  </div>
+
+  <section class="telemetry-table"><div class="panel-heading"><div><h2>Invocation timeline</h2><p>Refreshes automatically every second; every Mesh model attempt is shown separately and newest stays at the top.</p></div></div><div class="table-wrap"><table><thead><tr><th>Time</th><th>Learner</th><th>Service / operation</th><th>Model</th><th>Tokens</th><th>Cost</th><th>Latency</th><th>Outcome detail</th><th>Status</th></tr></thead><tbody data-observability-timeline>
+  {% for row in invocations %}{% set person = user_lookup.get(row.user_id) if row.user_id else none %}{% set meta = row.invocation_metadata or {} %}<tr><td>{{ row.started_at|utc_time }} UTC</td><td>{{ person.display_name if person else 'System' }}{% if row.user_id %}<small class="table-sub">({{ row.user_id[:8] }})</small>{% endif %}</td><td><strong>{{ row.service|upper }}</strong><small class="table-sub">{{ row.operation.replace('_',' ') }}</small></td><td>{{ row.model or '&mdash;'|safe }}</td><td>{{ row.input_tokens + row.output_tokens }}<small class="table-sub">{{ row.input_tokens }} in / {{ row.output_tokens }} out</small></td><td>{% if row.estimated_cost is none %}Unpriced{% else %}${{ '%.6f'|format(row.estimated_cost) }}{% endif %}</td><td>{{ row.latency_ms if row.latency_ms is not none else '&mdash;'|safe }}{% if row.latency_ms is not none %} ms{% endif %}</td><td>{% if meta.get('failure_scope') %}{{ meta.failure_scope.replace('_',' ') }}<small class="table-sub">{{ row.error_code }} &middot; {{ 'trying next model' if meta.get('try_next_model') else 'failover stopped' }}</small>{% elif meta.get('attempt') %}attempt {{ meta.attempt }} selected{% if row.provider_receipt or meta.get('request_id') %}<small class="table-sub">Mesh receipt {{ row.provider_receipt or meta.get('request_id') }}</small>{% endif %}{% else %}completed{% endif %}{% if row.service == 'llm' %}<small class="table-sub">LangSmith: {{ 'not correlation-enabled' if row.langsmith_export_status == 'legacy' else row.langsmith_export_status.replace('_', ' ') }}</small>{% endif %}</td><td><span class="status {{ 'good' if row.status == 'succeeded' else 'bad' if row.status == 'failed' else 'warn' }}">{{ row.status }}</span></td></tr>
+  {% else %}<tr><td colspan="9">No service invocations match this filter yet. Browse as a learner to create evidence.</td></tr>{% endfor %}</tbody></table></div></section>
+
+  <dialog class="kpi-dialog" data-kpi-dialog aria-labelledby="kpi-dialog-title">
+    <div class="kpi-dialog-shell">
+      <header class="kpi-dialog-header">
+        <div><span class="eyebrow">Operational intelligence</span><h2 id="kpi-dialog-title" data-kpi-title>Metric details</h2><p data-kpi-subtitle>Loading date and learner-level health evidence.</p></div>
+        <button class="kpi-dialog-close" type="button" data-kpi-close aria-label="Close metric details">&times;</button>
+      </header>
+      <div class="kpi-dialog-controls kpi-dialog-controls-top">
+        <div class="kpi-view-switch" role="tablist" aria-label="KPI grouping">
+          <button type="button" class="active" data-kpi-view="date" role="tab">By date</button>
+          <button type="button" data-kpi-view="user" role="tab">By learner</button>
+        </div>
+        <label data-kpi-date-control>Filter entire popup by date<select data-kpi-date><option value="">All recorded dates</option></select></label>
+      </div>
+      <div class="kpi-health neutral" data-kpi-health><span data-kpi-health-label>Loading</span><p data-kpi-health-message>Calculating service health&hellip;</p></div>
+      <div class="kpi-summary-grid" data-kpi-summary></div>
+      <div class="kpi-insights" data-kpi-insights></div>
+      <section class="kpi-detail-view" data-kpi-date-view>
+        <div class="kpi-view-heading"><div><h3>Daily trend</h3><p>Minimum reporting grain: <span data-kpi-grain>UTC day</span>.</p></div><small>Newest date first</small></div>
+        <div class="kpi-trend" data-kpi-trend></div>
+        <div class="table-wrap kpi-detail-table"><table><thead data-kpi-date-head></thead><tbody data-kpi-date-body></tbody></table></div>
+      </section>
+      <section class="kpi-detail-view" data-kpi-user-view hidden>
+        <div class="kpi-view-heading"><div><h3>Learner-level impact</h3><p>Compare product runtime and health for each learner.</p></div><small data-kpi-user-scope>All dates</small></div>
+        <div class="table-wrap kpi-detail-table"><table><thead data-kpi-user-head></thead><tbody data-kpi-user-body></tbody></table></div>
+      </section>
+      <footer class="kpi-dialog-footer"><span>Live operational evidence</span><small>Updated <time data-kpi-updated>now</time> &middot; auto-refreshes every 5 seconds while open</small></footer>
+      <div class="kpi-loading" data-kpi-loading hidden><span class="generation-spinner"></span><strong>Building KPI details&hellip;</strong></div>
+    </div>
+  </dialog>
+</section>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', path='/js/observability.js') }}?v=14" defer></script>{% endblock %}

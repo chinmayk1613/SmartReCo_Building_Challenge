@@ -1,0 +1,2 @@
+"""SmartReco application package."""
+

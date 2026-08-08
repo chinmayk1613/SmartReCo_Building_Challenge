@@ -1,0 +1,14 @@
+services:
+  smartreco:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - smartreco-data:/app/.smartreco
+    restart: unless-stopped
+
+volumes:
+  smartreco-data:
+

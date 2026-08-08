@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Model lab — SmartReco{% endblock %}
+{% block content %}
+<section class="shell admin-page">
+  <div class="section-heading"><div><span class="eyebrow">Controlled Mesh evaluation</span><h1>Compare models on identical evidence</h1><p>Choose a learner and one or more models. The free model is selected by default; paid tiers run only when you explicitly select them.</p></div><span class="status {{ 'good' if mesh_enabled else 'bad' }}">{{ 'Mesh ready' if mesh_enabled else 'MESH_API_KEY required' }}</span></div>
+  <form id="model-compare-form" class="form-card model-lab-form">
+    <input type="hidden" name="csrf_token" value="{{ current_session.csrf_token }}">
+    <label>Behavioral profile<select name="user_id" required>{% for user in users %}<option value="{{ user.id }}">{{ user.display_name }} · {{ user.email }}</option>{% endfor %}</select></label>
+    <fieldset><legend>Models to call</legend>{% for option in model_options %}<label class="model-choice"><input type="checkbox" name="selected_models" value="{{ option.id }}" {{ 'checked' if option.default }}><span><strong>{{ option.id }}</strong><small>{{ option.tier }} tier{% if not option.default %} · may require provider balance{% endif %}</small></span></label>{% endfor %}</fieldset>
+    <button class="button" type="submit" {{ 'disabled' if not mesh_enabled }}>Run selected models</button>
+    <p class="form-note">Some reasoning models can take up to two minutes. A failed paid model will not hide successful results from other models.</p>
+  </form>
+  <div id="model-results" class="model-results" aria-live="polite"><p class="muted">Results will use the learner's current profile and the same top three grounded catalog candidates.</p></div>
+</section>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', path='/js/model-lab.js') }}?v=6" defer></script>{% endblock %}

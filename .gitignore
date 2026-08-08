@@ -1,0 +1,17 @@
+.env
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.db
+*.db-*
+*.sqlite*
+.smartreco/
+qdrant-data/
+dist/
+build/
+*.log

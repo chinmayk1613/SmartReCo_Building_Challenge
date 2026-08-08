@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Operations — SmartReco{% endblock %}
+{% block content %}
+<section class="shell admin-page" data-overview-root>
+  <div class="section-heading">
+    <div><span class="eyebrow">Operations</span><h1>Behavioral recommendation control room</h1><p>Monitor learner evidence, recommendation runs, catalog sync, and delivery health.</p></div>
+    <span class="status {{ 'good' if mesh_enabled else 'warn' }}">Mesh {{ 'connected' if mesh_enabled else 'fallback mode' }}</span>
+  </div>
+  <div class="metric-grid overview-metrics">
+    {% for key, value in metrics.items() %}<div class="metric overview-kpi">
+      <span>{{ key.replace('_',' ') }}</span><strong>{{ value }}</strong>
+      <small>{{ metric_descriptions[key] }}</small>
+      <button type="button" class="metric-detail-button" data-overview-detail="{{ key }}">View details <b>&nearr;</b></button>
+    </div>{% endfor %}
+  </div>
+  <div class="admin-grid">
+    <section><div class="panel-heading"><div><h2>Recent raw activity</h2><p>Authenticated user activity before signal interpretation.</p></div><a href="/admin/activity">Explain pipeline</a></div>
+      <div class="table-wrap"><table><thead><tr><th>Time</th><th>Learner</th><th>Activity</th><th>What happened</th></tr></thead><tbody>
+      {% for row in event_rows %}<tr><td>{{ row.event.received_at|utc_time('%H:%M:%S') }} UTC</td><td><strong>{{ row.user.display_name if row.user else 'Unknown user' }}</strong><small class="table-sub">({{ row.event.user_id[:8] }})</small></td><td>{{ event_labels.get(row.event.event_type, row.event.event_type.replace('_',' ')|title) }}</td><td>{{ activity_detail(row.event, row.product) }}</td></tr>{% else %}<tr><td colspan="4">No activity yet.</td></tr>{% endfor %}
+      </tbody></table></div>
+    </section>
+    <section><div class="panel-heading"><div><h2>Recommendation runs</h2><p>Latest durable LangGraph workflow state.</p></div><a href="/admin/observability">View telemetry</a></div>
+      <div class="run-list">{% for run in runs %}<div><span class="status {{ 'good' if run.status == 'succeeded' else 'bad' if run.status == 'failed' else 'warn' }}">{{ run.status }}</span><strong>{{ run.current_node or 'queued' }}</strong><small>{{ run.trigger_reason }}</small></div>{% else %}<p class="muted">No runs yet.</p>{% endfor %}</div>
+    </section>
+  </div>
+  <dialog class="kpi-dialog overview-dialog" data-overview-dialog aria-labelledby="overview-dialog-title">
+    <div class="kpi-dialog-shell">
+      <header class="kpi-dialog-header">
+        <div><span class="eyebrow">Control-room drill-down</span><h2 id="overview-dialog-title" data-overview-title>Overview details</h2><p data-overview-subtitle>Loading operational evidence.</p></div>
+        <button class="kpi-dialog-close" type="button" data-overview-close aria-label="Close details">&times;</button>
+      </header>
+      <div class="kpi-summary-grid" data-overview-summary></div>
+      <section class="kpi-detail-view overview-detail-view">
+        <div class="kpi-view-heading"><div><h3>Evidence breakdown</h3><p>Calculated from the same persisted records as the overview card.</p></div><small data-overview-row-count></small></div>
+        <div class="table-wrap kpi-detail-table overview-detail-table"><table><thead data-overview-head></thead><tbody data-overview-body></tbody></table></div>
+      </section>
+      <footer class="kpi-dialog-footer"><span>Persisted operational evidence</span><small>Calculated <time data-overview-updated>now</time> in UTC</small></footer>
+      <div class="kpi-loading" data-overview-loading hidden><span class="generation-spinner"></span><strong>Building drill-down&hellip;</strong></div>
+    </div>
+  </dialog>
+</section>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', path='/js/admin-dashboard.js') }}?v=1" defer></script>{% endblock %}

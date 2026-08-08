@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Behavior pipeline — SmartReco{% endblock %}
+{% block content %}
+<section class="shell admin-page">
+  <div class="section-heading"><div><span class="eyebrow">Evidence pipeline</span><h1>How behavior becomes a recommendation</h1><p>Each column is a stage. Read from left to right to see exactly what the system inferred and why.</p></div><span class="streaming"><span class="live-dot"></span> live · newest at bottom</span></div>
+  <div class="pipeline-explainer">
+    <article><b>1</b><div><strong>Observe</strong><p>The browser batches meaningful actions without blocking the learner.</p></div></article>
+    <article><b>2</b><div><strong>Interpret</strong><p>Rules turn events into weighted evidence. Active course time counts after 15 seconds.</p></div></article>
+    <article><b>3</b><div><strong>Personalize</strong><p>All evidence updates one private user profile; the agent runs only after a meaningful threshold.</p></div></article>
+  </div>
+  <div class="signal-legend"><strong>Signal language</strong><span>Course viewed = interest</span><span>Search = explicit intent</span><span>Course dwell time = sustained attention</span><span>Saved = high intent</span><span>Dismissed = negative preference</span></div>
+  <div class="three-columns">
+    <section><div class="panel-heading"><div><h2>1. Accepted activity</h2><p>Updates automatically. Read downward to the newest activity.</p></div></div>
+      <div id="activity-stream" class="stream-list" data-after-id="{{ events[0].id if events else 0 }}">
+      {% for event in events[:40]|reverse %}{% set person = users.get(event.user_id) %}{% set product = products.get(event.product_id) if event.product_id else none %}
+        <article class="stream-row"><time>{{ event.received_at|utc_time('%H:%M:%S') }} UTC</time><div><strong>{{ event_labels.get(event.event_type, event.event_type.replace('_',' ')|title) }}</strong><small>{{ person.display_name if person else 'Unknown user' }} ({{ event.user_id[:8] }})</small></div><span>{{ activity_detail(event, product) }}</span></article>
+      {% else %}<p class="muted">No activity has been accepted.</p>{% endfor %}
+      </div>
+    </section>
+    <section><div class="panel-heading"><div><h2>2. Derived evidence</h2><p>Why the activity matters.</p></div></div>
+      <div class="stream-list">{% for signal in signals[:40] %}{% set person = users.get(signal.user_id) %}
+        <article class="signal-card"><div><span class="status {{ 'bad' if signal.strength < 0 else 'good' }}">{{ signal_labels.get(signal.signal_type, signal.signal_type.replace('_',' ')|title) }}</span><strong>{{ signal.topic.replace('_',' ')|title }}</strong></div><small>{{ person.display_name if person else 'Unknown user' }} ({{ signal.user_id[:8] }}) · strength {{ '%.2f'|format(signal.strength) }} · confidence {{ '%.2f'|format(signal.confidence) }}</small><p>{{ signal.reason }}</p></article>
+      {% else %}<p class="muted">No derived signals yet.</p>{% endfor %}</div>
+    </section>
+    <section><div class="panel-heading"><div><h2>3. Current understanding</h2><p>The private profile used for retrieval.</p></div></div>
+      <div class="stream-list">{% for profile in profiles %}{% set person = users.get(profile.user_id) %}<article class="profile-card"><span>{{ person.display_name if person else 'Unknown user' }} <code>({{ profile.user_id[:8] }})</code></span><h3>{{ (profile.primary_intent or 'insufficient evidence').replace('_',' ')|title }}</h3><p>{{ profile.journey_stage.replace('_',' ')|title }} · {{ (profile.confidence*100)|round|int }}% confidence</p><small>Profile v{{ profile.profile_version }} · agent trigger score {{ '%.1f'|format(profile.trigger_score) }}</small><p class="profile-summary">The system currently interprets this learner's strongest direction as {{ (profile.primary_intent or 'not yet known').replace('_',' ') }} based only on their own accumulated signals.</p></article>{% else %}<p class="muted">No profiles yet.</p>{% endfor %}</div>
+    </section>
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', path='/js/admin.js') }}?v=9" defer></script>{% endblock %}

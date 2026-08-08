@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}{{ product.title }} — SmartReco{% endblock %}
+{% block content %}
+<section class="product-atlas shell" data-product-page data-product-id="{{ product.id }}" data-category="{{ product.category }}" data-visit-id="{{ page_visit_id or '' }}">
+  <a class="back-link" href="/">&larr; Back to courses</a>
+  <div class="product-poster tone-coral">
+    <span class="poster-category">{{ product.category }}</span>
+    <div class="poster-glyph"><i></i><i></i><i></i></div>
+    <strong>{{ product.category }}</strong>
+    <small>Practical skills for real-world projects</small>
+  </div>
+  <div class="product-story">
+    <span class="section-index">{{ product.category }} / {{ product.level }}</span>
+    <h1>{{ product.title }}</h1>
+    <p class="product-lead">{{ product.description }}</p>
+    <div class="product-stats">
+      <span><small>Rating</small><strong>&#9733; {{ '%.1f'|format(product.rating) }}</strong></span>
+      <span><small>Study time</small><strong>{{ product.duration_minutes }} min</strong></span>
+      <span><small>Skill set</small><strong>{{ product.skills|length }} areas</strong></span>
+    </div>
+    <div class="outcome-section">
+      <span class="section-index">After this course</span>
+      <h2>What you will be ready to build</h2>
+      <ol>{% for outcome in product.outcomes %}<li><span>{{ '%02d'|format(loop.index) }}</span>{{ outcome }}</li>{% else %}<li><span>01</span>Apply the concepts through a practical learning path.</li>{% endfor %}</ol>
+    </div>
+  </div>
+  <aside class="enroll-rail">
+    <div class="price-card">
+      <span>Full course access</span><strong>${{ '%.0f'|format(product.price) }}</strong>
+      <p>Learn at your own pace with lifetime access.</p>
+      {% if current_user %}
+        {% if is_in_cart %}<a class="button button-block" href="/cart">In your cart · Show cart</a>
+        {% else %}<button class="button button-block" type="button" data-track="added_to_cart" data-product-id="{{ product.id }}" aria-live="polite">Add to cart</button><a class="button button-quiet button-block" href="/cart" data-show-cart hidden>Show cart</a>{% endif %}
+      {% else %}<a class="button button-block" href="/login">Sign in to add course</a>{% endif %}
+      <small>Secure checkout &middot; Lifetime access</small>
+    </div>
+    {% if current_user %}
+    <section class="signal-panel" aria-live="polite">
+      <div class="signal-panel-heading"><span class="pulse"></span><div><strong>Your latest signals</strong><small>Live · newest at the bottom · private to {{ current_user.display_name }}</small></div></div>
+      <div class="signal-feed" data-signal-list>
+        {% for signal in signals[:10] %}
+        <article class="signal-feed-row">
+          <span>{{ signal_labels.get(signal.signal_type, signal.signal_type.replace('_', ' ')|title) }}</span>
+          <div><strong>{{ signal.topic.replace('_', ' ')|title }}</strong><small>{{ signal.reason }}</small></div>
+          <time>{{ signal.last_observed_at|utc_time('%H:%M') }} UTC</time>
+        </article>
+        {% else %}
+        <p class="signal-empty">Explore or save a course and your latest activity will appear here.</p>
+        {% endfor %}
+      </div>
+    </section>
+    {% endif %}
+  </aside>
+</section>
+
+{% if current_user and current_user.role == 'user' %}
+<section class="recommendation-lifecycle shell" aria-live="polite" data-contextual-lifecycle data-product-id="{{ product.id }}" data-state="{{ contextual_lifecycle.state if contextual_lifecycle else 'empty' }}">
+  <div class="recommendation-generating" data-recommendation-generating {% if not contextual_lifecycle or contextual_lifecycle.state != 'generating' %}hidden{% endif %}>
+    <span class="generation-spinner" aria-hidden="true"></span>
+    <div><strong>Generating new recommendations for you</strong><p data-recommendation-progress>{% if contextual_lifecycle and contextual_lifecycle.run %}{{ (contextual_lifecycle.run.current_node or 'queued').replace('_', ' ')|title }}{% else %}Reading your latest course activity{% endif %}</p></div>
+  </div>
+  <div class="recommendation-current" data-recommendation-current {% if not contextual_recommendation or not contextual_lifecycle or contextual_lifecycle.state != 'current' %}hidden{% endif %}>
+    <span class="generation-complete" aria-hidden="true">&#10003;</span>
+    <p><strong>Recommendations generated</strong> at <time data-generated-at datetime="{{ contextual_recommendation.generated_at.isoformat() if contextual_recommendation else '' }}">your local time</time> <b data-latest-label>Latest for this visit</b></p>
+  </div>
+  <div class="recommendation-failed" data-recommendation-failed {% if not contextual_lifecycle or contextual_lifecycle.state != 'failed' %}hidden{% endif %}>
+    <span aria-hidden="true">!</span><p><strong>We could not refresh these recommendations.</strong> Your last completed recommendations remain available.</p>
+  </div>
+</section>
+
+<section class="product-next shell" aria-live="polite">
+  <div class="product-next-heading"><div><span class="section-index">Your connected learning story</span><h2 data-contextual-headline>{{ contextual_recommendation.headline if contextual_recommendation else 'Your best next steps from this course' }}</h2></div><p data-contextual-narrative>{{ contextual_recommendation.narrative if contextual_recommendation else 'This course stays at the center. We combine its skills with your accumulated activity to find the most useful directions for what you may want to learn and build next.' }}</p></div>
+  <div class="next-course-grid" data-course-recommendations>
+    {% for row in recommended_next %}
+    <a class="next-course-card" href="/products/{{ row.product.slug }}" data-track="recommendation_clicked" data-product-id="{{ row.product.id }}" {% if row.recommendation_id %}data-recommendation-id="{{ row.recommendation_id }}"{% endif %}>
+      <span class="next-rank">0{{ loop.index }}</span><small>{{ row.product.category }} &middot; {{ row.product.level }}</small>
+      {% if row.item and row.item.confidence_score > 0 %}<span class="fit-badge">{{ (row.item.confidence_score * 100)|round|int }}% fit confidence</span>{% endif %}
+      <h3>{{ row.product.title }}</h3><p>{{ row.explanation.replace('_', ' ') }}</p>
+      <div><strong>${{ '%.0f'|format(row.product.price) }}</strong><b>View course &rarr;</b></div>
+    </a>
+    {% else %}
+    <p class="recommendation-empty">Keep exploring. Your next recommendations will appear here as your interests become clearer.</p>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+{% endblock %}

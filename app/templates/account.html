@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Personalization settings — SmartReco{% endblock %}
+{% block content %}
+<section class="settings-layout shell">
+  <div class="settings-intro"><span class="section-index">Account settings</span><h1>Personalization <em>& privacy.</em></h1><p>Personalization starts enabled and can be turned off here. Digest email is separate and is sent only when you opt in.</p><div class="privacy-stamp">Your choices<br><strong>stay yours.</strong></div></div>
+  <form class="settings-card" action="/account" method="post">
+    {% if saved %}<p class="success">Preferences saved. Your choices are active now.</p>{% endif %}
+    <input type="hidden" name="csrf_token" value="{{ current_session.csrf_token }}">
+    <label class="preference-row"><span><strong>Personalized recommendations</strong><small>Enabled by default. When turned off, SmartReco stops accepting behavior, building signals, calling AI, and creating or delivering personalized recommendations.</small></span><input type="checkbox" name="personalization_enabled" {% if user.personalization_enabled %}checked{% endif %}><i></i></label>
+    <label class="preference-row"><span><strong>Recommendation digest</strong><small>Off by default. Enable this to explicitly opt in to one daily email when an active recommendation exists.</small></span><input type="checkbox" name="digest_enabled" {% if user.digest_enabled %}checked{% endif %}><i></i></label>
+    <div class="privacy-note"><strong>Your privacy matters</strong><p>Passwords, form contents and sensitive personal information are never used for recommendations.</p></div>
+    <button class="button" type="submit">Save preferences</button>
+  </form>
+  <form class="settings-card privacy-reset" action="/account/personalization-history/delete" method="post">
+    <input type="hidden" name="csrf_token" value="{{ current_session.csrf_token }}">
+    <h2>Reset personalization history</h2>
+    <p>This permanently removes your activity, signals, recommendation history, workflow telemetry, and queued deliveries. Your account and current sign-in remain active.</p>
+    <label>Type DELETE to confirm<input name="confirmation" autocomplete="off" required pattern="DELETE"></label>
+    <button class="button button-quiet" type="submit">Delete personalization history</button>
+  </form>
+</section>
+{% endblock %}

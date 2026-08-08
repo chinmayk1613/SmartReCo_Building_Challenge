@@ -1,0 +1,30 @@
+# SmartReco challenge requirements audit
+
+Status is based on executable behavior and regression tests, not feature labels.
+
+| Challenge requirement | Status | Implementation evidence |
+|---|---|---|
+| Email/password login and user/admin roles | Complete | Fixed-domain registration, Argon2 hashes, opaque hashed server sessions, CSRF, RBAC, logout revocation, login throttling, security headers, strict hosts, and production secret/cookie guards. |
+| Users, products, activity, stored recommendations | Complete | Relational records cover raw events, derived signals, decayed profiles, graph runs, recommendation items/exposures, deliveries/attempts, audit logs, auth attempts, and service invocations. |
+| Admin catalog management | Complete | Create/update/archive actions are CSRF/RBAC protected, audited, versioned, and recoverable. |
+| SQL and vector dual-write | Complete | SQL is authoritative. A transactional outbox uses atomic compare-and-set claims, processing leases, stale-worker recovery, idempotent version handling, retry/backoff, and final-version-wins semantics for Qdrant. |
+| Behavioral tracking | Complete | Batched non-blocking tracking covers search, category, view, click, active dwell, cart, recommendation feedback, and conversion. Event IDs are idempotent and offline queues are namespaced per authenticated learner. |
+| Behavioral event integrity | Complete | Event-specific server validation requires meaningful search/dwell/product/recommendation evidence, rejects impossible timestamps and oversized properties, verifies recommendation ownership/items, and derives product category from authoritative SQL. |
+| Per-user observation and privacy choice | Complete | Events, signals, profiles, recommendations, and learner APIs are authenticated/user-scoped. Personalization starts enabled with a clear opt-out that stops event acceptance, signal/profile creation, contextual/overall workflows, Mesh behavior export, and proactive delivery. Opt-out alone retains existing history; authenticated history deletion remains available. |
+| Agentic recommendation workflow | Complete | LangGraph runs load → retrieve → deterministic quality evaluation → at most one refine/retrieve loop → MCP/SQL verify → Mesh generate → validate → fallback/persist. Insufficient evidence stops without an LLM call. |
+| RAG over the real catalog | Complete with explicit status | Production embeddings go through Mesh and Qdrant (`SEMANTIC`). Deterministic hashes are labeled `DEGRADED`; provider/Qdrant failure is `UNAVAILABLE`. Unknown and archived vector IDs are discarded through SQL verification. |
+| Personalized persuasive narrative | Complete | Mesh receives bounded untrusted behavior/catalog data and already-selected IDs. Output is checked for exact ordered IDs and fabricated price, discount, guarantee, instruction-echo, and sensitive-trait claims before persistence. |
+| Stored, refreshed, and fresh recommendations | Complete | Output is persisted with item product versions and expiry. Display invalidates missing, archived, edited, or expired products. Controlled regeneration avoids an LLM cascade. |
+| AI efficiency and contextual caching | Complete | Raw clicks do not call the LLM. Overall runs use cursor/profile hash/threshold/cooldown gates. Context output is reused by profile hash/version, current course/version, full catalog revision, prompt version, expiry, and item freshness with single-flight concurrency. |
+| Scheduled proactive delivery | Complete in sandbox | Digest/email delivery is disabled by default and requires explicit opt-in. APScheduler creates timezone-aware, overall-only digests; dispatch atomically claims work and re-checks active user, the personalization preference, digest opt-in, recommendation scope/status/expiry, retries, freshness, and receipt before SMTP/sandbox send. |
+| LangSmith observability | Complete; external service dependent | Sanitized trace boundaries export pseudonymous learner correlation, graph/retrieval/provider spans, tokens, latency, and errors when configured. Local durable telemetry remains authoritative for provider attempts and reconciliation. |
+| Admin observability | Complete | Authorized dashboards show user-filterable LLM/RAG/MCP/LangGraph counts, tokens, latency, cost estimates, failures, provider attempts, run nodes, and LangSmith reconciliation. |
+| MCP | Complete with explicit boundary | Read-only FastMCP tools expose profile/search/detail/signals/candidates. Identity-bearing tools fail closed outside configured trusted-local stdio; no mutation tool exists. |
+| Retrieval polish | Complete | Semantic status, metadata eligibility, SQL verification, deterministic re-ranking, relevance gates, one bounded refinement, diversity, feedback/consumption exclusions, and grounding checks are implemented. |
+| Model comparison | Complete | Admins explicitly select free/paid models; free is default, provider failures remain independent, and exact ID grounding is mandatory. |
+| Recommendation-system evidence | Complete | Ten reproducible synthetic journeys report Precision@3, Recall@3, NDCG@3, diversity, coverage, separation, exclusions, hallucinated-ID rate, fallback, latency, Mesh calls, and estimated cost using declared relevance labels. |
+| Retention and submission hygiene | Complete | UTC retention enforcement applies to events, signals, recommendations, sessions, and auth attempts. `.env` is ignored and Docker-excluded together with databases, caches, logs, coverage, and local Qdrant state. |
+
+## Honest deployment boundary
+
+Local development still uses SQLite, embedded Qdrant, one APScheduler process, sandbox delivery, and may intentionally operate in `DEGRADED` deterministic-embedding mode. Production requires a unique secret, HTTPS secure cookies, approved hosts, PostgreSQL, remote Qdrant, Mesh embeddings enabled, one scheduler leader, approved SMTP credentials, backups, and a LangSmith key when hosted tracing is desired. The current behavioral MCP server is trusted-local stdio only; it must not be exposed as a multi-tenant network service without principal authentication.

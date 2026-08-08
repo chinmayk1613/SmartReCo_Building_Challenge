@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Create account — SmartReco{% endblock %}
+{% block content %}
+<section class="auth-layout">
+  <div class="auth-intro register-intro"><span class="kicker"><i></i>Learning that adapts to you</span><h1>Discover courses that <em>fit your goals.</em></h1><p>Personalization starts enabled when you create an account. You can turn it off or delete your personalization history at any time; digest email remains off until you opt in.</p><div class="auth-art"><span>Personalized discovery</span><span>Privacy controls</span><span>Progressive recommendations</span><strong>Powered by Mesh API</strong></div></div>
+  <form class="auth-card" method="post">
+    <input type="hidden" name="form_csrf" value="{{ form_csrf }}">
+    <span class="section-index">Create your account</span><h2>Join SmartReco</h2>
+    {% if error %}<div class="error">{{ error }}</div>{% endif %}
+    <label>Your name<input name="display_name" placeholder="Full name" required minlength="2"></label>
+    <label>Email address<span class="fixed-email"><input name="email_local" placeholder="your.name" required maxlength="64" pattern="[A-Za-z0-9][A-Za-z0-9._-]*"><strong>@{{ email_domain }}</strong></span><small>Choose your account name. The organization domain is fixed.</small></label>
+    <label>Password<input type="password" name="password" placeholder="10 characters or more" required minlength="10"><small>Use at least 10 characters.</small></label>
+    <button class="button button-block" type="submit">Create account</button><p>Already registered? <a href="/login">Sign in</a></p>
+  </form>
+</section>
+{% endblock %}

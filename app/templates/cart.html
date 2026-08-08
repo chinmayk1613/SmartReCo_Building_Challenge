@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}My cart — SmartReco{% endblock %}
+{% block content %}
+<section class="shell cart-page" data-cart-page>
+  <div class="section-heading"><div><span class="eyebrow">Your learning shortlist</span><h1>My cart</h1><p>Review the courses you are considering. Cart activity strengthens related interests, while these exact courses remain excluded from recommendations.</p></div><a class="button button-quiet" href="/">Continue exploring</a></div>
+  {% if products %}
+  <div class="cart-layout">
+    <div class="cart-list">
+      {% for product in products %}
+      <article class="cart-item" data-cart-item data-product-id="{{ product.id }}" data-category="{{ product.category }}">
+        <div class="cart-item-rank">{{ '%02d'|format(loop.index) }}</div>
+        <div><span class="section-index">{{ product.category }} · {{ product.level }}</span><h2><a href="/products/{{ product.slug }}">{{ product.title }}</a></h2><p>{{ product.description }}</p><small>{{ product.duration_minutes }} minutes · ★ {{ '%.1f'|format(product.rating) }}</small></div>
+        <div class="cart-item-actions"><strong>${{ '%.0f'|format(product.price) }}</strong><button class="button button-quiet button-small" type="button" data-track="removed_from_cart" data-product-id="{{ product.id }}">Remove</button></div>
+      </article>
+      {% endfor %}
+    </div>
+    <aside class="cart-summary"><span>Courses selected</span><strong data-cart-total>{{ products|length }}</strong><p>SmartReco uses the topics in your cart as strong consideration evidence, but will recommend complementary courses instead of repeating these items.</p><a class="button button-block" href="/">Find related courses</a></aside>
+  </div>
+  {% else %}
+  <div class="empty-cart"><span>0 courses</span><h2>Your cart is ready for a direction.</h2><p>Add a course you are considering and SmartReco will use that intent to improve related recommendations.</p><a class="button" href="/">Explore courses</a></div>
+  {% endif %}
+</section>
+{% endblock %}

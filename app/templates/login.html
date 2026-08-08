@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Sign in — SmartReco{% endblock %}
+{% block content %}
+<section class="auth-layout">
+  <div class="auth-intro"><span class="kicker"><i></i>Welcome back</span><h1>Continue your <em>learning journey.</em></h1><p>Return to your personalized course recommendations and continue building the skills that matter to you.</p><div class="auth-art"><span>Personal recommendations</span><span>Curated courses</span><span>Flexible learning</span><strong>Powered by Mesh API</strong></div></div>
+  <form class="auth-card" method="post">
+    <input type="hidden" name="form_csrf" value="{{ form_csrf }}">
+    <input type="hidden" name="next" value="{{ next_path or '' }}">
+    <span class="section-index">Account access</span><h2>Sign in to SmartReco</h2>
+    {% if error %}<div class="error">{{ error }}</div>{% endif %}
+    <label>Email address<input type="email" name="email" placeholder="you@example.com" required autofocus></label>
+    <label>Password<input type="password" name="password" placeholder="Your password" required></label>
+    <button class="button button-block" type="submit">Sign in</button><p>New to SmartReco? <a href="/register">Create your account</a></p>
+  </form>
+</section>
+{% endblock %}

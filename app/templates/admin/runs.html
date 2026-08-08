@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Agent runs — SmartReco{% endblock %}
+{% block content %}
+<section class="shell admin-page">
+  <div class="section-heading">
+    <div><span class="eyebrow">LangGraph</span><h1>Recommendation lifecycle</h1><p>Every workflow run is tied to a named learner and retains its operational outcome. Nodes update live while RAG, MCP and the Mesh AI model run.</p></div>
+    <div class="observability-live-state"><span class="live-badge"><i></i> Live</span><small data-runs-refreshed>Connecting&hellip;</small></div>
+  </div>
+  <div class="run-status-note"><strong>What the LLM node does</strong><p>After RAG ranks relevant catalog courses and MCP verifies them, the Mesh AI model writes the personalized headline, narrative and one grounded reason per selected course. It cannot replace the selected course IDs.</p></div>
+  <div class="table-wrap" data-agent-runs><table><thead><tr><th>Started</th><th>Learner</th><th>Scope / source course</th><th>Trigger</th><th>Status</th><th>Live node</th><th>Model</th><th>Tokens</th><th>Error detail</th></tr></thead><tbody data-agent-runs-body>
+  {% for run in runs %}{% set person = users.get(run.user_id) %}
+    <tr><td><time datetime="{{ run.created_at.isoformat() }}">{{ run.created_at|utc_time }} UTC</time></td><td><strong>{{ person.display_name if person else 'Unknown learner' }}</strong><small class="table-sub" title="{{ run.user_id }}">({{ run.user_id[:8] }})</small></td><td><strong>{{ 'Course detail' if run.context_product_id else 'Overall interests' }}</strong>{% if run.context_product_id %}<small class="table-sub">Course ID: {{ run.context_product_id }}</small>{% endif %}</td><td>{{ run.trigger_reason }}</td><td><span class="status {{ 'good' if run.status == 'succeeded' else 'bad' if run.status == 'failed' else 'warn' }}">{{ run.status }}</span></td><td>{{ run.current_node or 'queued' }}</td><td>{{ run.model or '—' }}</td><td>{{ run.input_tokens + run.output_tokens }}</td><td>{% if run.error_code %}<strong>{{ run.error_code }}</strong><small class="table-sub">{{ run.error_detail or 'No additional provider detail was returned.' }}</small>{% else %}—{% endif %}</td></tr>
+  {% else %}<tr><td colspan="9">No recommendation runs yet.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', path='/js/runs.js') }}?v=2" defer></script>{% endblock %}

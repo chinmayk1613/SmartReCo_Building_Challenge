@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block title %}SmartReco — Courses recommended for you{% endblock %}
+{% block content %}
+<section class="hero-atlas shell">
+  <div class="hero-copy">
+    <span class="kicker"><i></i>Personalized learning, built around you</span>
+    <h1>Find the right course for your <em>next move.</em></h1>
+    <p class="hero-lead">Explore high-quality courses and receive recommendations that adapt to your interests, goals, and learning journey.</p>
+    <form class="discovery-search" action="/" method="get" data-search-form>
+      <span class="search-mark">⌕</span>
+      <input name="q" value="{{ q }}" placeholder="Search courses, topics, or skills" aria-label="Search catalog">
+      <button type="submit">Search</button>
+    </form>
+    <div class="hero-facts"><span><strong>{{ products|length }}</strong> curated courses</span><span><strong>Personal</strong> recommendations</span><span><strong>Private</strong> by design</span></div>
+  </div>
+
+  <aside class="interest-compass" aria-label="Personalized recommendation overview">
+    <div class="compass-orbit orbit-one"></div><div class="compass-orbit orbit-two"></div>
+    <div class="compass-core"><span>Recommendations<br>tuned to you</span></div>
+    {% if current_user and profile and profile.primary_intent %}
+      <div class="compass-topic topic-primary"><small>Top interest</small><strong>{{ profile.primary_intent.replace('_', ' ')|title }}</strong></div>
+      <div class="compass-topic topic-stage"><small>Learning stage</small><strong>{% if profile.journey_stage == 'purchase_intent' %}Ready to decide{% elif profile.journey_stage == 'consideration' %}Comparing options{% else %}Exploring{% endif %}</strong></div>
+      <div class="confidence-dial"><strong>{{ (profile.confidence * 100)|round|int }}%</strong><span>confidence</span></div>
+    {% else %}
+      <div class="compass-topic topic-primary"><small>Popular interest</small><strong>AI Engineering</strong></div>
+      <div class="compass-topic topic-stage"><small>Learning goal</small><strong>Career Growth</strong></div>
+      <div class="confidence-dial"><strong>Live</strong><span>updates</span></div>
+    {% endif %}
+    <span class="orbit-dot dot-a"></span><span class="orbit-dot dot-b"></span><span class="orbit-dot dot-c"></span>
+  </aside>
+</section>
+
+{% if not current_user %}
+<section class="method-strip"><div class="shell method-grid"><span>01 <strong>Explore courses</strong></span><span>02 <strong>Discover what fits</strong></span><span>03 <strong>Learn with confidence</strong></span><span>04 <strong>Keep progressing</strong></span></div></section>
+{% endif %}
+
+{% if false %}
+<section class="interest-widget shell">
+  <div class="interest-widget-heading">
+    <div><span class="section-index">Your complete activity history</span><h2>Your strongest interests so far</h2></div>
+    <p>Each topic uses your complete recency-weighted history and includes its strongest currently eligible course match.</p>
+  </div>
+  <div class="interest-topic-grid">
+    {% for item in top_interests[:3] %}
+    <article class="interest-topic-card" data-recommendation-card>
+      <div><span class="interest-rank">0{{ loop.index }}</span><small>{{ item.affinity }}% relative interest</small></div>
+      <h3>{{ item.label }}</h3>
+      <progress class="interest-meter" value="{{ item.affinity }}" max="100">{{ item.affinity }}%</progress>
+      <p>Learned from your complete private activity history.</p>
+      <div class="interest-course-pick">
+        <a href="/products/{{ item.course.slug }}" data-track="recommendation_clicked" data-product-id="{{ item.course.id }}">
+          <span>Top course for this interest</span><strong>{{ item.course.title }}</strong><b>View course →</b>
+        </a>
+        <button class="recommendation-feedback interest-feedback" type="button" data-track="recommendation_dismissed" data-product-id="{{ item.course.id }}">Not for me</button>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if current_user and recommendation %}
+<section class="route-section shell" data-recommendation-id="{{ recommendation.id }}">
+  <div class="route-story">
+    <span class="section-index">Recommended for you</span>
+    <h2>{{ recommendation.headline }}</h2>
+    <p>{{ recommendation.narrative.replace('catalog-grounded', 'carefully selected') }}</p>
+    <div class="route-model"><span>Personalized as your interests evolve</span><strong>Powered by Mesh API</strong></div>
+  </div>
+  <div class="route-cards">
+    {% for row in recommendation_items %}
+    <article class="route-card" data-recommendation-card>
+      <a class="route-card-link" href="/products/{{ row.product.slug }}" data-track="recommendation_clicked" data-product-id="{{ row.product.id }}" data-recommendation-id="{{ recommendation.id }}">
+        <span class="route-rank">0{{ row.item.rank }}</span><span class="route-arrow">→</span>
+        <small>{{ row.product.category }}</small><h3>{{ row.product.title }}</h3><p>{{ row.item.explanation.replace('_', ' ') }}</p>
+      </a>
+      <button class="recommendation-feedback" type="button" data-track="recommendation_dismissed" data-product-id="{{ row.product.id }}" data-recommendation-id="{{ recommendation.id }}">Not for me</button>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+<section class="catalog-section shell">
+  <div class="catalog-heading">
+    <div><span class="section-index">Explore {{ products|length }} courses</span><h2>Courses for every <em>ambition.</em></h2></div>
+    <p>Develop practical skills with focused courses selected for modern technology careers.</p>
+  </div>
+  <div class="category-rail" aria-label="Course categories">
+    <a class="category-tab {{ 'active' if not selected_category }}" href="/">All courses</a>
+    {% for item in categories %}<a class="category-tab {{ 'active' if selected_category == item }}" href="/?category={{ item|urlencode }}" data-track="category_selected" data-category="{{ item }}">{{ item }}</a>{% endfor %}
+  </div>
+  <div class="course-atlas">
+    {% for product in products %}
+    <article class="course-card {{ loop.cycle('tone-coral','tone-citrus','tone-sky','tone-mint','tone-sand') }}{% if loop.first %} course-featured{% endif %}" data-product-id="{{ product.id }}">
+      <a href="/products/{{ product.slug }}" data-track="product_clicked" data-product-id="{{ product.id }}">
+        <div class="course-poster">
+          <span class="poster-number">{{ '%02d'|format(loop.index) }}</span><span class="poster-category">{{ product.category }}</span>
+          <div class="poster-glyph"><i></i><i></i><i></i></div>
+          <strong>{{ product.category }}</strong>
+        </div>
+        <div class="course-copy">
+          <div class="course-meta"><span>{{ product.level }}</span><span>{{ product.duration_minutes }} min</span></div>
+          <h3>{{ product.title }}</h3>
+          <p>{{ product.description[:150] }}{% if product.description|length > 150 %}…{% endif %}</p>
+          <div class="course-bottom"><span>★ {{ '%.1f'|format(product.rating) }}</span><strong>${{ '%.0f'|format(product.price) }}</strong><b>View course</b></div>
+        </div>
+      </a>
+    </article>
+    {% else %}<div class="empty">No course sits at this coordinate yet. Try another search.</div>{% endfor %}
+  </div>
+</section>
+{% endblock %}
