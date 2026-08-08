@@ -1,4 +1,4 @@
-# SmartReco evaluation evidence
+# SmartReco evaluation evidence 
 
 Updated on 2026-08-08. Every number below came from an unchanged reproducible evaluator. The current real Mesh-semantic result is kept separate from the earlier deterministic/hash result.
 
