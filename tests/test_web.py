@@ -557,6 +557,8 @@ def test_observability_main_filter_is_utc_date_range_scoped(client, db, admin, u
     assert 'data-kpi-dialog' in response.text
     dialog_markup = response.text.split('data-kpi-dialog', 1)[1]
     assert dialog_markup.index('kpi-dialog-controls-top') < dialog_markup.index('data-kpi-health')
+    assert 'data-kpi-date-control' not in dialog_markup
+    assert 'data-kpi-date>' not in dialog_markup
     assert 'data-kpi-range-control hidden' in dialog_markup
     assert 'data-kpi-start-date' in dialog_markup
     assert 'data-kpi-end-date' in dialog_markup
