@@ -76,6 +76,58 @@ def test_invalid_login_is_rejected(client, user):
     assert response.status_code == 400
 
 
+def test_session_expires_after_thirty_minutes_of_inactivity(client, db, user):
+    login(client)
+    session = db.scalar(select(UserSession).where(UserSession.user_id == user.id))
+    now = datetime.now(timezone.utc)
+    session.created_at = now - timedelta(hours=1)
+    session.last_seen_at = now - timedelta(minutes=30, seconds=1)
+    session.expires_at = now + timedelta(hours=1)
+    db.commit()
+
+    response = client.get("/account")
+
+    assert response.status_code == 401
+    db.expire_all()
+    assert db.get(UserSession, session.id).revoked_at is not None
+
+
+def test_session_has_absolute_eight_hour_lifetime(client, db, user):
+    login_response = login(client)
+    assert "Max-Age=28800" in login_response.headers["set-cookie"]
+    session = db.scalar(select(UserSession).where(UserSession.user_id == user.id))
+    now = datetime.now(timezone.utc)
+    session.created_at = now - timedelta(hours=8, seconds=1)
+    session.last_seen_at = now
+    session.expires_at = now + timedelta(hours=1)
+    db.commit()
+
+    response = client.get("/account")
+
+    assert response.status_code == 401
+    db.expire_all()
+    assert db.get(UserSession, session.id).revoked_at is not None
+
+
+def test_active_session_refreshes_persisted_last_seen_time(client, db, user):
+    login(client)
+    session = db.scalar(select(UserSession).where(UserSession.user_id == user.id))
+    previous_seen_at = datetime.now(timezone.utc) - timedelta(minutes=29)
+    session.created_at = datetime.now(timezone.utc) - timedelta(hours=1)
+    session.last_seen_at = previous_seen_at
+    session.expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+    db.commit()
+
+    response = client.get("/account")
+
+    assert response.status_code == 200
+    db.expire_all()
+    refreshed = db.get(UserSession, session.id).last_seen_at
+    if refreshed.tzinfo is None:
+        refreshed = refreshed.replace(tzinfo=timezone.utc)
+    assert refreshed > previous_seen_at
+
+
 def test_user_cannot_access_admin(client, user):
     login(client)
     assert client.get("/admin").status_code == 403

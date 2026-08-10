@@ -41,7 +41,8 @@ class Settings(BaseSettings):
     recommendation_cooldown_seconds: int = 20
     contextual_recommendation_ttl_hours: int = 24
     signal_debounce_seconds: int = 5
-    session_ttl_hours: int = 168
+    session_ttl_hours: int = 8
+    session_idle_minutes: int = 30
     login_max_attempts: int = 5
     login_window_minutes: int = 15
     registration_email_domain: str = "smartreco.ai"
