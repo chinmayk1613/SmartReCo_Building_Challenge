@@ -12,6 +12,9 @@ from app.db import SessionLocal
 from app.models import Delivery, DeliveryAttempt, Product, Recommendation, RecommendationItem, User, utcnow
 
 
+MAX_DAILY_DIGESTS = 3
+
+
 def _aware(value: datetime) -> datetime:
     return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
 
@@ -33,6 +36,72 @@ def configured_digest_time_gmt(db) -> str:
     return f"{hour:02d}:{minute:02d}"
 
 
+def _active_overall_recommendation(db, user_id: str, now: datetime) -> Recommendation | None:
+    return db.scalar(
+        select(Recommendation)
+        .where(
+            Recommendation.user_id == user_id,
+            Recommendation.status == "active",
+            Recommendation.recommendation_type == "overall",
+            Recommendation.context_product_id.is_(None),
+            (Recommendation.expires_at.is_(None) | (Recommendation.expires_at > now)),
+        )
+        .order_by(Recommendation.generated_at.desc())
+    )
+
+
+def _daily_digest_count(db, user_id: str, utc_date) -> int:
+    prefix = f"digest:{user_id}:{utc_date.isoformat()}"
+    return db.scalar(
+        select(func.count(Delivery.id)).where(
+            Delivery.user_id == user_id,
+            Delivery.idempotency_key.like(f"{prefix}%"),
+        )
+    ) or 0
+
+
+def schedule_admin_digest_slot(time_gmt: str, slot_key: str, now: datetime | None = None) -> dict[str, int]:
+    """Persist one admin-created same-day slot without exceeding three digests per learner."""
+    now = _aware(now or utcnow()).astimezone(timezone.utc)
+    hour, minute = (int(part) for part in time_gmt.split(":"))
+    target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    scheduled_for = now if now >= target else target
+    db = SessionLocal()
+    created = capped = 0
+    try:
+        users = db.scalars(
+            select(User).where(
+                User.is_active.is_(True), User.personalization_enabled.is_(True), User.digest_enabled.is_(True)
+            )
+        ).all()
+        for user in users:
+            prefix = f"digest:{user.id}:{now.date().isoformat()}"
+            if _daily_digest_count(db, user.id, now.date()) >= MAX_DAILY_DIGESTS:
+                capped += 1
+                continue
+            recommendation = _active_overall_recommendation(db, user.id, now)
+            if not recommendation:
+                continue
+            key = f"{prefix}:admin:{slot_key}"
+            if db.scalar(select(Delivery.id).where(Delivery.idempotency_key == key)):
+                continue
+            db.add(
+                Delivery(
+                    user_id=user.id,
+                    recommendation_id=recommendation.id,
+                    channel="email",
+                    scheduled_for=scheduled_for,
+                    status="scheduled",
+                    idempotency_key=key,
+                )
+            )
+            created += 1
+        db.commit()
+        return {"created": created, "capped": capped}
+    finally:
+        db.close()
+
+
 def schedule_due_digests(now: datetime | None = None) -> dict[str, int]:
     """Create at most one daily delivery per opted-in user and recommendation."""
     now = now or utcnow()
@@ -49,22 +118,12 @@ def schedule_due_digests(now: datetime | None = None) -> dict[str, int]:
             utc_now = _aware(now).astimezone(timezone.utc)
             utc_target = utc_now.replace(hour=digest_hour, minute=digest_minute, second=0, microsecond=0)
             scheduled_for = utc_now if utc_now >= utc_target else utc_target
-            recommendation = db.scalar(
-                select(Recommendation)
-                .where(
-                    Recommendation.user_id == user.id,
-                    Recommendation.status == "active",
-                    Recommendation.recommendation_type == "overall",
-                    Recommendation.context_product_id.is_(None),
-                    (Recommendation.expires_at.is_(None) | (Recommendation.expires_at > now)),
-                )
-                .order_by(Recommendation.generated_at.desc())
-            )
+            recommendation = _active_overall_recommendation(db, user.id, now)
             if not recommendation:
                 continue
             key = f"digest:{user.id}:{utc_now.date().isoformat()}"
             exists = db.scalar(select(Delivery.id).where(Delivery.idempotency_key == key))
-            if not exists:
+            if not exists and _daily_digest_count(db, user.id, utc_now.date()) < MAX_DAILY_DIGESTS:
                 db.add(
                     Delivery(
                         user_id=user.id,

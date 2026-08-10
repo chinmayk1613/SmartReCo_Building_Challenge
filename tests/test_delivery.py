@@ -8,7 +8,12 @@ from sqlalchemy import select
 from app.config import get_settings
 from app.models import Delivery, DeliveryAttempt, Recommendation, RecommendationItem, RecommendationRun, utcnow
 from app.services import delivery as delivery_service
-from app.services.delivery import dispatch_due_deliveries, recover_stale_deliveries, schedule_due_digests
+from app.services.delivery import (
+    dispatch_due_deliveries,
+    recover_stale_deliveries,
+    schedule_admin_digest_slot,
+    schedule_due_digests,
+)
 
 
 @pytest.fixture
@@ -79,6 +84,35 @@ def test_daily_digest_scheduling_is_idempotent(db, user, admin, active_recommend
     assert db.query(Delivery).count() == 1
     delivery = db.scalar(select(Delivery))
     assert delivery.scheduled_for == datetime(2026, 8, 10, 18, 45, tzinfo=timezone.utc)
+
+
+def test_admin_time_changes_create_at_most_three_daily_digests(db, user, admin, active_recommendation):
+    user.digest_enabled = True
+    admin.digest_time_gmt = "15:00"
+    db.commit()
+    now = datetime(2026, 8, 10, 10, 0, tzinfo=timezone.utc)
+
+    assert schedule_due_digests(now)["created"] == 1
+    assert schedule_admin_digest_slot("11:00", "change-1", now) == {"created": 1, "capped": 0}
+    assert schedule_admin_digest_slot("12:00", "change-2", now) == {"created": 1, "capped": 0}
+    assert schedule_admin_digest_slot("13:00", "change-3", now) == {"created": 0, "capped": 1}
+
+    deliveries = list(db.scalars(select(Delivery).order_by(Delivery.scheduled_for)).all())
+    assert len(deliveries) == 3
+    assert len({delivery.idempotency_key for delivery in deliveries}) == 3
+
+
+def test_normal_scheduler_cannot_exceed_three_existing_admin_slots(db, user, admin, active_recommendation):
+    user.digest_enabled = True
+    admin.digest_time_gmt = "15:00"
+    db.commit()
+    now = datetime(2026, 8, 10, 10, 0, tzinfo=timezone.utc)
+
+    for index, value in enumerate(["11:00", "12:00", "13:00"], start=1):
+        assert schedule_admin_digest_slot(value, f"change-{index}", now)["created"] == 1
+
+    assert schedule_due_digests(now)["created"] == 0
+    assert db.query(Delivery).count() == 3
 
 
 def test_sandbox_dispatch_records_receipt_and_attempt(db, user, active_recommendation):

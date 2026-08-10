@@ -38,7 +38,13 @@ from app.schemas import EventBatchInput, ProductInput, RegisterInput
 from app.security import create_session, hash_password, verify_password
 from app.services.admin_overview import build_overview_detail
 from app.services.catalog import archive_product, create_product, get_active_products, update_product
-from app.services.delivery import configured_digest_time_gmt, dispatch_due_deliveries, schedule_due_digests
+from app.services.delivery import (
+    MAX_DAILY_DIGESTS,
+    configured_digest_time_gmt,
+    dispatch_due_deliveries,
+    schedule_admin_digest_slot,
+    schedule_due_digests,
+)
 from app.services.mesh import mesh_gateway
 from app.services.recommendation import (
     execute_contextual_recommendation,
@@ -1722,15 +1728,52 @@ def admin_observability_details_api(
     return observability_detail(db, metric, user_id, date, start_date, end_date)
 
 
+def _admin_schedule_changes_today(db: Session, now: datetime | None = None) -> int:
+    now = (now or utcnow()).astimezone(timezone.utc)
+    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    day_end = day_start + timedelta(days=1)
+    return db.scalar(
+        select(func.count(AuditLog.id)).where(
+            AuditLog.action == "delivery.schedule.updated",
+            AuditLog.created_at >= day_start,
+            AuditLog.created_at < day_end,
+        )
+    ) or 0
+
+
 @router.get("/admin/deliveries", response_class=HTMLResponse)
-def admin_deliveries(request: Request, db: Session = Depends(get_db)):
+def admin_deliveries(
+    request: Request,
+    schedule_saved: bool = False,
+    schedule_limit: bool = False,
+    schedule_unchanged: bool = False,
+    deliveries_created: int = 0,
+    db: Session = Depends(get_db),
+):
     require_admin(request, db)
     deliveries = list(db.scalars(select(Delivery).order_by(Delivery.scheduled_for.desc()).limit(100)).all())
     rows = []
     for delivery in deliveries:
         attempts = list(db.scalars(select(DeliveryAttempt).where(DeliveryAttempt.delivery_id == delivery.id).order_by(DeliveryAttempt.attempt_number)).all())
         rows.append({"delivery": delivery, "user": db.get(User, delivery.user_id), "attempts": attempts})
-    return templates.TemplateResponse(request, "admin/deliveries.html", context(request, db, rows=rows, digest_time_gmt=configured_digest_time_gmt(db)))
+    changes_used = _admin_schedule_changes_today(db)
+    return templates.TemplateResponse(
+        request,
+        "admin/deliveries.html",
+        context(
+            request,
+            db,
+            rows=rows,
+            digest_time_gmt=configured_digest_time_gmt(db),
+            schedule_changes_used=changes_used,
+            schedule_changes_remaining=max(0, MAX_DAILY_DIGESTS - changes_used),
+            max_daily_digests=MAX_DAILY_DIGESTS,
+            schedule_saved=schedule_saved,
+            schedule_limit=schedule_limit,
+            schedule_unchanged=schedule_unchanged,
+            deliveries_created=deliveries_created,
+        ),
+    )
 
 
 @router.post("/admin/deliveries/schedule-time")
@@ -1745,12 +1788,23 @@ def admin_delivery_schedule_time(
     normalized = digest_time_gmt.strip()
     if not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", normalized):
         raise HTTPException(400, "Digest time must use 24-hour HH:MM format in GMT")
+    if normalized == configured_digest_time_gmt(db):
+        return RedirectResponse("/admin/deliveries?schedule_unchanged=true", status_code=303)
+    if _admin_schedule_changes_today(db) >= MAX_DAILY_DIGESTS:
+        return RedirectResponse("/admin/deliveries?schedule_limit=true", status_code=303)
     admins = db.scalars(select(User).where(User.role == "admin")).all()
     for admin_user in admins:
         admin_user.digest_time_gmt = normalized
-    db.add(AuditLog(actor_user_id=admin.id, action="delivery.schedule.updated", object_type="delivery", audit_metadata={"digest_time_gmt": normalized, "timezone": "GMT"}))
+    audit = AuditLog(actor_user_id=admin.id, action="delivery.schedule.updated", object_type="delivery", audit_metadata={"digest_time_gmt": normalized, "timezone": "GMT", "daily_limit": MAX_DAILY_DIGESTS})
+    db.add(audit)
+    db.flush()
+    slot_key = audit.id
     db.commit()
-    return RedirectResponse("/admin/deliveries", status_code=303)
+    result = schedule_admin_digest_slot(normalized, slot_key)
+    return RedirectResponse(
+        f"/admin/deliveries?schedule_saved=true&deliveries_created={result['created']}",
+        status_code=303,
+    )
 
 
 @router.post("/admin/deliveries/run")

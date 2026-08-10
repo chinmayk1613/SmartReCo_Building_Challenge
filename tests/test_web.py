@@ -261,6 +261,29 @@ def test_only_admin_can_configure_global_digest_time(client, db, user, admin):
     assert admin.digest_time_gmt == "18:45"
 
 
+def test_admin_schedule_time_changes_are_limited_to_three_per_utc_day(client, db, admin):
+    login(client, "admin@example.com")
+    session = db.scalar(select(UserSession).where(UserSession.user_id == admin.id))
+    for value in ["16:00", "17:00", "18:00"]:
+        response = client.post(
+            "/admin/deliveries/schedule-time",
+            data={"csrf_token": session.csrf_token, "digest_time_gmt": value},
+            follow_redirects=False,
+        )
+        assert response.status_code == 303
+        assert "schedule_saved=true" in response.headers["location"]
+
+    limited = client.post(
+        "/admin/deliveries/schedule-time",
+        data={"csrf_token": session.csrf_token, "digest_time_gmt": "19:00"},
+        follow_redirects=False,
+    )
+    assert limited.status_code == 303
+    assert "schedule_limit=true" in limited.headers["location"]
+    db.refresh(admin)
+    assert admin.digest_time_gmt == "18:00"
+
+
 def test_disabled_personalization_drops_behavioral_events(client, db, user):
     user.personalization_enabled = False
     db.commit()
