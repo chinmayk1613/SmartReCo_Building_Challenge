@@ -573,13 +573,18 @@ def account_update(
     csrf_token: str = Form(...),
     personalization_enabled: str | None = Form(None),
     digest_enabled: str | None = Form(None),
+    digest_time_gmt: str = Form("15:00"),
     db: Session = Depends(get_db),
 ):
     user, session = require_user(request, db)
     validate_csrf(request, session, csrf_token)
+    normalized_digest_time = digest_time_gmt.strip()
+    if not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", normalized_digest_time):
+        raise HTTPException(400, "Digest time must use 24-hour HH:MM format in GMT")
     user.personalization_enabled = personalization_enabled == "on"
     user.digest_enabled = user.personalization_enabled and digest_enabled == "on"
-    db.add(AuditLog(actor_user_id=user.id, action="preferences.update", object_type="user", object_id=user.id, audit_metadata={"personalization": user.personalization_enabled, "digest": user.digest_enabled}))
+    user.digest_time_gmt = normalized_digest_time
+    db.add(AuditLog(actor_user_id=user.id, action="preferences.update", object_type="user", object_id=user.id, audit_metadata={"personalization": user.personalization_enabled, "digest": user.digest_enabled, "digest_time_gmt": user.digest_time_gmt}))
     db.commit()
     return templates.TemplateResponse(request, "account.html", context(request, db, user=user, saved=True))
 

@@ -233,11 +233,23 @@ def test_admin_catalog_create_and_archive_buttons_work(client, db, admin):
 def test_user_can_opt_in_to_personalization_and_digest(client, db, user):
     login(client)
     session = db.scalar(select(UserSession).where(UserSession.user_id == user.id))
-    response = client.post("/account", data={"csrf_token": session.csrf_token, "personalization_enabled": "on", "digest_enabled": "on"})
+    response = client.post("/account", data={"csrf_token": session.csrf_token, "personalization_enabled": "on", "digest_enabled": "on", "digest_time_gmt": "18:45"})
     db.refresh(user)
     assert response.status_code == 200
     assert user.personalization_enabled is True
     assert user.digest_enabled is True
+    assert user.digest_time_gmt == "18:45"
+    assert 'value="18:45"' in response.text
+
+
+def test_digest_time_rejects_invalid_non_gmt_time(client, db, user):
+    login(client)
+    session = db.scalar(select(UserSession).where(UserSession.user_id == user.id))
+    response = client.post("/account", data={"csrf_token": session.csrf_token, "personalization_enabled": "on", "digest_enabled": "on", "digest_time_gmt": "25:75"})
+    assert response.status_code == 400
+    db.refresh(user)
+    assert user.digest_enabled is False
+    assert user.digest_time_gmt == "15:00"
 
 
 def test_disabled_personalization_drops_behavioral_events(client, db, user):

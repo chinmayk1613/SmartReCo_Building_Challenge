@@ -58,6 +58,7 @@ class User(Base):
     timezone: Mapped[str] = mapped_column(String(80), default="UTC")
     personalization_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     digest_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    digest_time_gmt: Mapped[str] = mapped_column(String(5), default="15:00")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 

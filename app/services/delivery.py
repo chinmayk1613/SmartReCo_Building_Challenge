@@ -4,7 +4,6 @@ import smtplib
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 from uuid import uuid4
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import func, select, update
 
@@ -30,14 +29,14 @@ def schedule_due_digests(now: datetime | None = None) -> dict[str, int]:
         ).all()
         for user in users:
             try:
-                user_zone = ZoneInfo(user.timezone or "UTC")
-            except ZoneInfoNotFoundError:
-                user_zone = ZoneInfo("UTC")
-            local_now = now.astimezone(user_zone)
-            local_target = local_now.replace(
-                hour=max(0, min(23, get_settings().digest_hour_local)), minute=0, second=0, microsecond=0
-            )
-            scheduled_for = now if local_now >= local_target else local_target.astimezone(timezone.utc)
+                digest_hour, digest_minute = (int(part) for part in (user.digest_time_gmt or "15:00").split(":"))
+                if not (0 <= digest_hour <= 23 and 0 <= digest_minute <= 59):
+                    raise ValueError
+            except (TypeError, ValueError):
+                digest_hour, digest_minute = max(0, min(23, get_settings().digest_hour_local)), 0
+            utc_now = _aware(now).astimezone(timezone.utc)
+            utc_target = utc_now.replace(hour=digest_hour, minute=digest_minute, second=0, microsecond=0)
+            scheduled_for = utc_now if utc_now >= utc_target else utc_target
             recommendation = db.scalar(
                 select(Recommendation)
                 .where(
@@ -51,7 +50,7 @@ def schedule_due_digests(now: datetime | None = None) -> dict[str, int]:
             )
             if not recommendation:
                 continue
-            key = f"digest:{user.id}:{local_now.date().isoformat()}"
+            key = f"digest:{user.id}:{utc_now.date().isoformat()}"
             exists = db.scalar(select(Delivery.id).where(Delivery.idempotency_key == key))
             if not exists:
                 db.add(

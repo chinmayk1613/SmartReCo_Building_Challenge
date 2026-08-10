@@ -514,18 +514,21 @@ def test_two_outbox_workers_cannot_process_one_operation_twice(db, products, mon
     assert db.get(CatalogOutbox, outbox.id).status == "succeeded"
 
 
-def test_digest_uses_overall_recommendation_and_honors_local_day(db, user, products):
+def test_digest_uses_overall_recommendation_and_honors_selected_gmt_time(db, user, products):
     user.digest_enabled = True
     user.timezone = "Asia/Kolkata"
+    user.digest_time_gmt = "18:45"
     overall_run = RecommendationRun(user_id=user.id, trigger_type="test", trigger_reason="test", idempotency_key=str(uuid4()), profile_hash="a", status="succeeded")
     contextual_run = RecommendationRun(user_id=user.id, scope_key=f"course:{products[0].id}", context_product_id=products[0].id, trigger_type="test", trigger_reason="test", idempotency_key=str(uuid4()), profile_hash="a", status="succeeded")
     db.add_all([overall_run, contextual_run]); db.flush()
     overall = Recommendation(run_id=overall_run.id, user_id=user.id, headline="Overall", narrative="Overall behavior recommendation narrative.", model="test", profile_snapshot={})
     contextual = Recommendation(run_id=contextual_run.id, user_id=user.id, recommendation_type="contextual", context_product_id=products[0].id, headline="Context", narrative="Context recommendation narrative.", model="test", profile_snapshot={})
     db.add_all([overall, contextual]); db.commit()
-    schedule_due_digests(utcnow().replace(hour=16, minute=0, second=0, microsecond=0))
+    now = utcnow().replace(hour=18, minute=30, second=0, microsecond=0)
+    schedule_due_digests(now)
     delivery = db.scalar(select(Delivery))
     assert delivery.recommendation_id == overall.id
+    assert delivery.scheduled_for == now.replace(hour=18, minute=45)
 
 
 def test_retention_enforces_expiry_for_events_signals_sessions_and_auth(db, user):

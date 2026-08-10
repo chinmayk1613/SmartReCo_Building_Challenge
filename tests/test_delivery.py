@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
 
@@ -71,10 +71,14 @@ def test_digest_requires_explicit_opt_in(db, user, active_recommendation):
 
 def test_daily_digest_scheduling_is_idempotent(db, user, active_recommendation):
     user.digest_enabled = True
+    user.digest_time_gmt = "18:45"
     db.commit()
-    assert schedule_due_digests()["created"] == 1
-    assert schedule_due_digests()["created"] == 0
+    now = datetime(2026, 8, 10, 18, 30, tzinfo=timezone.utc)
+    assert schedule_due_digests(now)["created"] == 1
+    assert schedule_due_digests(now)["created"] == 0
     assert db.query(Delivery).count() == 1
+    delivery = db.scalar(select(Delivery))
+    assert delivery.scheduled_for == datetime(2026, 8, 10, 18, 45, tzinfo=timezone.utc)
 
 
 def test_sandbox_dispatch_records_receipt_and_attempt(db, user, active_recommendation):

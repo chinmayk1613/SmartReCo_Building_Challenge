@@ -7,6 +7,11 @@ os.environ["MESH_API_KEY"] = ""
 os.environ["MESH_EMBEDDINGS_ENABLED"] = "false"
 os.environ["LANGSMITH_TRACING"] = "false"
 os.environ["LANGSMITH_API_KEY"] = ""
+os.environ["DELIVERY_MODE"] = "sandbox"
+os.environ["SMTP_HOST"] = ""
+os.environ["SMTP_USERNAME"] = ""
+os.environ["SMTP_PASSWORD"] = ""
+os.environ["ALLOWED_HOSTS"] = "127.0.0.1,localhost,testserver"
 
 import pytest
 from fastapi.testclient import TestClient

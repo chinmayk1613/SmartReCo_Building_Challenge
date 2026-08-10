@@ -8,7 +8,7 @@ import sys
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-HEAD_REVISION = "20260807_0006"
+HEAD_REVISION = "20260810_0007"
 
 
 def _upgrade_head(environment: dict[str, str]) -> subprocess.CompletedProcess[str]:
@@ -99,6 +99,7 @@ def test_fresh_alembic_chain_reaches_head_and_is_repeatable(tmp_path: Path) -> N
             "vector_dimension",
             "index_schema_version",
         }.issubset(columns("product_vector_state"))
+        assert "digest_time_gmt" in columns("users")
 
     second_upgrade = _upgrade_head(environment)
     assert second_upgrade.returncode == 0

@@ -8,6 +8,7 @@
     <input type="hidden" name="csrf_token" value="{{ current_session.csrf_token }}">
     <label class="preference-row"><span><strong>Personalized recommendations</strong><small>Enabled by default. When turned off, SmartReco stops accepting behavior, building signals, calling AI, and creating or delivering personalized recommendations.</small></span><input type="checkbox" name="personalization_enabled" {% if user.personalization_enabled %}checked{% endif %}><i></i></label>
     <label class="preference-row"><span><strong>Recommendation digest</strong><small>Off by default. Enable this to explicitly opt in to one daily email when an active recommendation exists.</small></span><input type="checkbox" name="digest_enabled" {% if user.digest_enabled %}checked{% endif %}><i></i></label>
+    <label class="digest-time-row"><span><strong>Daily delivery time</strong><small>Your recommendation digest will be scheduled at this time every day in GMT.</small></span><input type="time" name="digest_time_gmt" value="{{ user.digest_time_gmt or '15:00' }}" step="60" required aria-label="Daily digest time in GMT"><b>GMT</b></label>
     <div class="privacy-note"><strong>Your privacy matters</strong><p>Passwords, form contents and sensitive personal information are never used for recommendations.</p></div>
     <button class="button" type="submit">Save preferences</button>
   </form>
