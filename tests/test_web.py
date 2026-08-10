@@ -238,18 +238,27 @@ def test_user_can_opt_in_to_personalization_and_digest(client, db, user):
     assert response.status_code == 200
     assert user.personalization_enabled is True
     assert user.digest_enabled is True
-    assert user.digest_time_gmt == "18:45"
-    assert 'value="18:45"' in response.text
-
-
-def test_digest_time_rejects_invalid_non_gmt_time(client, db, user):
-    login(client)
-    session = db.scalar(select(UserSession).where(UserSession.user_id == user.id))
-    response = client.post("/account", data={"csrf_token": session.csrf_token, "personalization_enabled": "on", "digest_enabled": "on", "digest_time_gmt": "25:75"})
-    assert response.status_code == 400
-    db.refresh(user)
-    assert user.digest_enabled is False
     assert user.digest_time_gmt == "15:00"
+    assert 'name="digest_time_gmt"' not in response.text
+
+
+def test_only_admin_can_configure_global_digest_time(client, db, user, admin):
+    login(client)
+    user_session = db.scalar(select(UserSession).where(UserSession.user_id == user.id))
+    denied = client.post("/admin/deliveries/schedule-time", data={"csrf_token": user_session.csrf_token, "digest_time_gmt": "18:45"})
+    assert denied.status_code == 403
+
+    client.cookies.clear()
+    login(client, "admin@example.com")
+    admin_session = db.scalar(select(UserSession).where(UserSession.user_id == admin.id))
+    page = client.get("/admin/deliveries")
+    assert 'name="digest_time_gmt"' in page.text
+    invalid = client.post("/admin/deliveries/schedule-time", data={"csrf_token": admin_session.csrf_token, "digest_time_gmt": "25:75"})
+    assert invalid.status_code == 400
+    saved = client.post("/admin/deliveries/schedule-time", data={"csrf_token": admin_session.csrf_token, "digest_time_gmt": "18:45"}, follow_redirects=False)
+    assert saved.status_code == 303
+    db.refresh(admin)
+    assert admin.digest_time_gmt == "18:45"
 
 
 def test_disabled_personalization_drops_behavioral_events(client, db, user):

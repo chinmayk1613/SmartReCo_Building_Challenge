@@ -514,10 +514,10 @@ def test_two_outbox_workers_cannot_process_one_operation_twice(db, products, mon
     assert db.get(CatalogOutbox, outbox.id).status == "succeeded"
 
 
-def test_digest_uses_overall_recommendation_and_honors_selected_gmt_time(db, user, products):
+def test_digest_uses_overall_recommendation_and_honors_selected_gmt_time(db, user, admin, products):
     user.digest_enabled = True
     user.timezone = "Asia/Kolkata"
-    user.digest_time_gmt = "18:45"
+    admin.digest_time_gmt = "18:45"
     overall_run = RecommendationRun(user_id=user.id, trigger_type="test", trigger_reason="test", idempotency_key=str(uuid4()), profile_hash="a", status="succeeded")
     contextual_run = RecommendationRun(user_id=user.id, scope_key=f"course:{products[0].id}", context_product_id=products[0].id, trigger_type="test", trigger_reason="test", idempotency_key=str(uuid4()), profile_hash="a", status="succeeded")
     db.add_all([overall_run, contextual_run]); db.flush()

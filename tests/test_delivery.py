@@ -69,9 +69,9 @@ def test_digest_requires_explicit_opt_in(db, user, active_recommendation):
     assert db.query(Delivery).count() == 0
 
 
-def test_daily_digest_scheduling_is_idempotent(db, user, active_recommendation):
+def test_daily_digest_scheduling_is_idempotent(db, user, admin, active_recommendation):
     user.digest_enabled = True
-    user.digest_time_gmt = "18:45"
+    admin.digest_time_gmt = "18:45"
     db.commit()
     now = datetime(2026, 8, 10, 18, 30, tzinfo=timezone.utc)
     assert schedule_due_digests(now)["created"] == 1

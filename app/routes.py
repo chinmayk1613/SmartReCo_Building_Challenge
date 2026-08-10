@@ -38,7 +38,7 @@ from app.schemas import EventBatchInput, ProductInput, RegisterInput
 from app.security import create_session, hash_password, verify_password
 from app.services.admin_overview import build_overview_detail
 from app.services.catalog import archive_product, create_product, get_active_products, update_product
-from app.services.delivery import dispatch_due_deliveries, schedule_due_digests
+from app.services.delivery import configured_digest_time_gmt, dispatch_due_deliveries, schedule_due_digests
 from app.services.mesh import mesh_gateway
 from app.services.recommendation import (
     execute_contextual_recommendation,
@@ -573,18 +573,13 @@ def account_update(
     csrf_token: str = Form(...),
     personalization_enabled: str | None = Form(None),
     digest_enabled: str | None = Form(None),
-    digest_time_gmt: str = Form("15:00"),
     db: Session = Depends(get_db),
 ):
     user, session = require_user(request, db)
     validate_csrf(request, session, csrf_token)
-    normalized_digest_time = digest_time_gmt.strip()
-    if not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", normalized_digest_time):
-        raise HTTPException(400, "Digest time must use 24-hour HH:MM format in GMT")
     user.personalization_enabled = personalization_enabled == "on"
     user.digest_enabled = user.personalization_enabled and digest_enabled == "on"
-    user.digest_time_gmt = normalized_digest_time
-    db.add(AuditLog(actor_user_id=user.id, action="preferences.update", object_type="user", object_id=user.id, audit_metadata={"personalization": user.personalization_enabled, "digest": user.digest_enabled, "digest_time_gmt": user.digest_time_gmt}))
+    db.add(AuditLog(actor_user_id=user.id, action="preferences.update", object_type="user", object_id=user.id, audit_metadata={"personalization": user.personalization_enabled, "digest": user.digest_enabled}))
     db.commit()
     return templates.TemplateResponse(request, "account.html", context(request, db, user=user, saved=True))
 
@@ -1735,7 +1730,27 @@ def admin_deliveries(request: Request, db: Session = Depends(get_db)):
     for delivery in deliveries:
         attempts = list(db.scalars(select(DeliveryAttempt).where(DeliveryAttempt.delivery_id == delivery.id).order_by(DeliveryAttempt.attempt_number)).all())
         rows.append({"delivery": delivery, "user": db.get(User, delivery.user_id), "attempts": attempts})
-    return templates.TemplateResponse(request, "admin/deliveries.html", context(request, db, rows=rows))
+    return templates.TemplateResponse(request, "admin/deliveries.html", context(request, db, rows=rows, digest_time_gmt=configured_digest_time_gmt(db)))
+
+
+@router.post("/admin/deliveries/schedule-time")
+def admin_delivery_schedule_time(
+    request: Request,
+    csrf_token: str = Form(...),
+    digest_time_gmt: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    admin, session = require_admin(request, db)
+    validate_csrf(request, session, csrf_token)
+    normalized = digest_time_gmt.strip()
+    if not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", normalized):
+        raise HTTPException(400, "Digest time must use 24-hour HH:MM format in GMT")
+    admins = db.scalars(select(User).where(User.role == "admin")).all()
+    for admin_user in admins:
+        admin_user.digest_time_gmt = normalized
+    db.add(AuditLog(actor_user_id=admin.id, action="delivery.schedule.updated", object_type="delivery", audit_metadata={"digest_time_gmt": normalized, "timezone": "GMT"}))
+    db.commit()
+    return RedirectResponse("/admin/deliveries", status_code=303)
 
 
 @router.post("/admin/deliveries/run")

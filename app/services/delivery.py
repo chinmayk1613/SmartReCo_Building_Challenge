@@ -16,6 +16,23 @@ def _aware(value: datetime) -> datetime:
     return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
 
 
+def configured_digest_time_gmt(db) -> str:
+    """Return the administrator-controlled daily digest time in GMT."""
+    value = db.scalar(
+        select(User.digest_time_gmt)
+        .where(User.role == "admin", User.is_active.is_(True))
+        .order_by(User.created_at, User.id)
+        .limit(1)
+    )
+    try:
+        hour, minute = (int(part) for part in (value or "").split(":"))
+        if not (0 <= hour <= 23 and 0 <= minute <= 59):
+            raise ValueError
+    except (TypeError, ValueError):
+        hour, minute = max(0, min(23, get_settings().digest_hour_local)), 0
+    return f"{hour:02d}:{minute:02d}"
+
+
 def schedule_due_digests(now: datetime | None = None) -> dict[str, int]:
     """Create at most one daily delivery per opted-in user and recommendation."""
     now = now or utcnow()
@@ -27,13 +44,8 @@ def schedule_due_digests(now: datetime | None = None) -> dict[str, int]:
                 User.is_active.is_(True), User.personalization_enabled.is_(True), User.digest_enabled.is_(True)
             )
         ).all()
+        digest_hour, digest_minute = (int(part) for part in configured_digest_time_gmt(db).split(":"))
         for user in users:
-            try:
-                digest_hour, digest_minute = (int(part) for part in (user.digest_time_gmt or "15:00").split(":"))
-                if not (0 <= digest_hour <= 23 and 0 <= digest_minute <= 59):
-                    raise ValueError
-            except (TypeError, ValueError):
-                digest_hour, digest_minute = max(0, min(23, get_settings().digest_hour_local)), 0
             utc_now = _aware(now).astimezone(timezone.utc)
             utc_target = utc_now.replace(hour=digest_hour, minute=digest_minute, second=0, microsecond=0)
             scheduled_for = utc_now if utc_now >= utc_target else utc_target
