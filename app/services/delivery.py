@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import smtplib
+import ssl
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
+from html import escape
 from uuid import uuid4
 
 from sqlalchemy import func, select, update
@@ -171,14 +173,76 @@ def _send_smtp(delivery: Delivery, user: User, recommendation: Recommendation) -
         ).all()
     finally:
         db.close()
-    course_lines = "\n".join(
-        f"{index}. {product.title} — {item.explanation}" for index, (item, product) in enumerate(items, start=1)
+    public_url = settings.app_public_url.rstrip("/")
+    display_name = (user.display_name or "there").strip()
+    learner_name = escape(display_name)
+    course_lines = "\n\n".join(
+        f"{index}. {product.title}\n"
+        f"   Why it fits: {item.explanation}\n"
+        f"   View course: {public_url}/products/{product.slug}"
+        for index, (item, product) in enumerate(items, start=1)
     )
     message.set_content(
-        f"{recommendation.narrative}\n\n{course_lines}\n\nView your recommendations: {settings.app_public_url.rstrip('/')}/"
+        f"Hi {display_name},\n\n"
+        f"{recommendation.narrative}\n\n"
+        f"Courses selected for your learning journey:\n\n{course_lines}\n\n"
+        f"Explore your recommendations: {public_url}/\n"
+        f"Manage email preferences: {public_url}/account"
     )
+    course_cards = "".join(
+        f"""
+        <tr><td style="padding:0 0 16px 0;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+                 style="border:1px solid #e4e2f4;border-radius:14px;background:#ffffff;">
+            <tr><td style="padding:20px 22px;">
+              <div style="font-size:12px;line-height:18px;font-weight:700;letter-spacing:1px;color:#6557e8;text-transform:uppercase;">
+                {escape(product.category)} &middot; {escape(product.level)}
+              </div>
+              <h2 style="margin:7px 0 9px;font-size:21px;line-height:28px;color:#17182f;">{escape(product.title)}</h2>
+              <p style="margin:0 0 16px;font-size:15px;line-height:24px;color:#50536b;">
+                <strong style="color:#292b45;">Why this fits your journey:</strong> {escape(item.explanation)}
+              </p>
+              <a href="{public_url}/products/{escape(product.slug)}"
+                 style="display:inline-block;padding:11px 18px;border-radius:9px;background:#5d4fe5;color:#ffffff;text-decoration:none;font-size:14px;font-weight:700;">
+                Explore this course &rarr;
+              </a>
+            </td></tr>
+          </table>
+        </td></tr>
+        """
+        for item, product in items
+    )
+    message.add_alternative(
+        f"""<!doctype html>
+<html><body style="margin:0;background:#f5f5fb;font-family:Arial,Helvetica,sans-serif;color:#17182f;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f5fb;padding:28px 12px;">
+    <tr><td align="center">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:640px;">
+        <tr><td style="padding:28px 30px;border-radius:18px 18px 0 0;background:#4f46d9;color:#ffffff;">
+          <div style="font-size:13px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;opacity:.9;">SmartReco daily digest</div>
+          <h1 style="margin:12px 0 8px;font-size:30px;line-height:38px;color:#ffffff;">{escape(recommendation.headline)}</h1>
+          <p style="margin:0;font-size:15px;line-height:23px;color:#f4f1ff;">Prepared for {learner_name}, based on your evolving learning interests.</p>
+        </td></tr>
+        <tr><td style="padding:27px 30px 30px;background:#ffffff;border-radius:0 0 18px 18px;box-shadow:0 10px 28px rgba(35,32,91,.10);">
+          <p style="margin:0 0 9px;font-size:16px;line-height:25px;color:#292b45;">Hi {learner_name},</p>
+          <p style="margin:0 0 24px;font-size:16px;line-height:26px;color:#454861;">{escape(recommendation.narrative)}</p>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0">{course_cards}</table>
+          <div style="padding-top:8px;text-align:center;">
+            <a href="{public_url}/" style="display:inline-block;padding:13px 22px;border-radius:10px;background:#17182f;color:#ffffff;text-decoration:none;font-size:15px;font-weight:700;">View all recommendations</a>
+          </div>
+          <p style="margin:24px 0 0;text-align:center;font-size:12px;line-height:19px;color:#7b7e94;">
+            You receive this digest because you opted in. <a href="{public_url}/account" style="color:#6557e8;">Manage email preferences</a>.
+          </p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>""",
+        subtype="html",
+    )
+    tls_context = ssl.create_default_context()
     with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=20) as client:
-        client.starttls()
+        client.starttls(context=tls_context)
         if settings.smtp_username:
             client.login(settings.smtp_username, settings.smtp_password or "")
         response = client.send_message(message)

@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor
+import ssl
 from threading import Barrier
 
 import pytest
@@ -131,10 +132,12 @@ def test_sandbox_dispatch_records_receipt_and_attempt(db, user, active_recommend
     assert attempt.provider_status == "accepted"
 
 
-def test_smtp_uses_only_profile_digest_email(db, user, active_recommendation, monkeypatch):
+def test_smtp_uses_only_profile_digest_email(db, user, products, active_recommendation, monkeypatch):
     user.digest_email = "daily@personal.example"
+    _attach_recommendation_item(db, active_recommendation, products[0])
     delivery = _queue_delivery(db, user, active_recommendation, "digest-recipient")
     captured = {}
+    events = []
 
     class FakeSMTP:
         def __init__(self, *_args, **_kwargs):
@@ -146,24 +149,98 @@ def test_smtp_uses_only_profile_digest_email(db, user, active_recommendation, mo
         def __exit__(self, *_args):
             return False
 
-        def starttls(self):
+        def starttls(self, *, context):
+            events.append("starttls")
+            captured["tls_context"] = context
             return None
 
         def login(self, *_args):
+            events.append("login")
             return None
 
         def send_message(self, message):
+            events.append("send")
             captured["recipient"] = message["To"]
+            captured["message"] = message
             return {}
 
     settings = get_settings()
     monkeypatch.setattr(settings, "smtp_host", "smtp.test")
-    monkeypatch.setattr(settings, "smtp_username", None)
+    monkeypatch.setattr(settings, "smtp_username", "api")
+    monkeypatch.setattr(settings, "smtp_password", "test-secret")
     monkeypatch.setattr(delivery_service.smtplib, "SMTP", FakeSMTP)
     receipt = delivery_service._send_smtp(delivery, user, active_recommendation)
 
     assert captured["recipient"] == "daily@personal.example"
+    assert isinstance(captured["tls_context"], ssl.SSLContext)
+    assert captured["tls_context"].verify_mode == ssl.CERT_REQUIRED
+    assert captured["tls_context"].check_hostname is True
+    assert events == ["starttls", "login", "send"]
+    plain_body = captured["message"].get_body(preferencelist=("plain",)).get_content()
+    html_body = captured["message"].get_body(preferencelist=("html",)).get_content()
+    course_url = f"{settings.app_public_url.rstrip('/')}/products/{products[0].slug}"
+    assert f"Hi {user.display_name}" in plain_body
+    assert course_url in plain_body
+    assert "Why it fits:" in plain_body
+    assert "SmartReco daily digest" in html_body
+    assert course_url in html_body
+    assert "Why this fits your journey:" in html_body
+    assert f"Prepared for {user.display_name}" in html_body
     assert receipt.startswith(f"smtp:{delivery.id}:accepted")
+
+
+def test_tls_verification_failure_never_authenticates_or_sends_and_retries(
+    db, user, active_recommendation, monkeypatch
+):
+    delivery = _queue_delivery(db, user, active_recommendation, "tls-verification-failure")
+    events = []
+    contexts = []
+
+    class FailingTLS:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def starttls(self, *, context):
+            events.append("starttls")
+            contexts.append(context)
+            raise ssl.SSLCertVerificationError("certificate verification failed")
+
+        def login(self, *_args):
+            events.append("login")
+
+        def send_message(self, _message):
+            events.append("send")
+            return {}
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "delivery_mode", "smtp")
+    monkeypatch.setattr(settings, "smtp_host", "smtp.test")
+    monkeypatch.setattr(settings, "smtp_username", "api")
+    monkeypatch.setattr(settings, "smtp_password", "test-secret")
+    monkeypatch.setattr(delivery_service.smtplib, "SMTP", FailingTLS)
+
+    result = dispatch_due_deliveries()
+
+    db.refresh(delivery)
+    attempt = db.scalar(select(DeliveryAttempt).where(DeliveryAttempt.delivery_id == delivery.id))
+    assert events == ["starttls"]
+    assert len(contexts) == 1
+    assert contexts[0].verify_mode == ssl.CERT_REQUIRED
+    assert contexts[0].check_hostname is True
+    assert result["sent"] == 0
+    assert result["retried"] == 1
+    assert delivery.status == "scheduled"
+    assert delivery.provider_receipt is None
+    assert delivery.sent_at is None
+    assert attempt.status == "retry_scheduled"
+    assert attempt.provider_status == "error"
+    assert "certificate verification failed" in (attempt.error_detail or "")
 
 
 def test_digest_requires_configured_digest_email(db, user, active_recommendation):

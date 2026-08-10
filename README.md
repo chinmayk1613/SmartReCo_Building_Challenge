@@ -124,6 +124,24 @@ Then inspect `/admin/activity`, `/admin/runs`, `/admin/observability`, and the l
 
 Digest delivery defaults to a local sandbox: it records a realistic provider receipt without contacting an external service. Opt in from `/account`, then inspect or manually run the dispatcher from `/admin/deliveries`. Set `DELIVERY_MODE=smtp` and the SMTP variables only when using an approved provider sandbox.
 
+### SMTP digest setup
+
+For an approved SMTP sandbox such as Mailtrap, copy the provider credentials into the local `.env` file (never commit them), set the public application address used by course links, and restart SmartReco:
+
+```env
+DELIVERY_MODE=smtp
+SMTP_HOST=sandbox.smtp.mailtrap.io
+SMTP_PORT=587
+SMTP_USERNAME=
+SMTP_PASSWORD=
+SMTP_FROM=SmartReco <recommendations@smartreco.local>
+APP_PUBLIC_URL=http://127.0.0.1:8000
+```
+
+The SMTP client requires verified STARTTLS before authentication or sending; certificate or hostname verification failures follow the normal delivery retry/failure path and never fall back to plaintext. The resulting multipart digest includes the personalized recommendation narrative, a tailored explanation and direct link for every selected course, plus an accessible plain-text version. Learners must enable digest delivery and provide a digest address in `/account`; the dispatcher rechecks consent, address, catalog activity, expiry and product version immediately before provider contact.
+
+The full setup, delivery lifecycle and architecture diagram are included in [the technical handover handbook](docs/SmartReco_End_to_End_Technical_Handover_Handbook.pdf).
+
 ## Mesh API
 
 ```env
