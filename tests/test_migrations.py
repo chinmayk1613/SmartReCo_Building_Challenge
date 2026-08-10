@@ -22,6 +22,17 @@ def _upgrade_head(environment: dict[str, str]) -> subprocess.CompletedProcess[st
     )
 
 
+def _check_schema(environment: dict[str, str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, "-m", "alembic", "check"],
+        cwd=PROJECT_ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+
 def test_fresh_alembic_chain_reaches_head_and_is_repeatable(tmp_path: Path) -> None:
     database_path = tmp_path / "fresh-smartreco.db"
     runtime_qdrant_path = tmp_path / "qdrant"
@@ -93,3 +104,6 @@ def test_fresh_alembic_chain_reaches_head_and_is_repeatable(tmp_path: Path) -> N
     assert second_upgrade.returncode == 0
     with sqlite3.connect(database_path) as connection:
         assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (HEAD_REVISION,)
+
+    schema_check = _check_schema(environment)
+    assert "No new upgrade operations detected" in schema_check.stdout
