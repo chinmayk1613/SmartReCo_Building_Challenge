@@ -30,6 +30,13 @@
   </aside>
 </section>
 
+{% if current_user and current_user.role == 'user' and not current_user.digest_email %}
+<section class="digest-email-nudge shell" aria-label="Daily digest email reminder">
+  <div><span>Daily course shortlist</span><strong>Receive great course recommendations in your inbox.</strong><small>Add a daily digest email, then opt in under Preferences.</small></div>
+  <a class="button button-small" href="/profile">Add digest email</a>
+</section>
+{% endif %}
+
 {% if not current_user %}
 <section class="method-strip"><div class="shell method-grid"><span>01 <strong>Explore courses</strong></span><span>02 <strong>Discover what fits</strong></span><span>03 <strong>Learn with confidence</strong></span><span>04 <strong>Keep progressing</strong></span></div></section>
 {% endif %}

@@ -23,7 +23,7 @@
         <label class="profile-readonly"><span>Phone number</span><strong>{{ phone_display }}</strong><small>Not stored · cannot be edited</small></label>
       </div>
       <label class="profile-email-field"><span>Email address</span><span class="fixed-email"><input name="email_local" value="{{ email_local }}" required maxlength="64" pattern="[A-Za-z0-9][A-Za-z0-9._-]*" autocomplete="email"><strong>@{{ email_domain }}</strong></span><small>The existing domain is fixed; only the account name can change.</small></label>
-      <label class="profile-password-field"><span>Daily digest email address</span><input type="email" name="digest_email" value="{{ user.digest_email or '' }}" maxlength="320" placeholder="you@personal-email.com" autocomplete="email"><small>Optional. When set, recommendation digests go only to this address. Clear it to use your SmartReco sign-in email.</small></label>
+      <label class="profile-password-field"><span>Daily digest email address</span><input type="email" name="digest_email" value="{{ user.digest_email or '' }}" maxlength="320" placeholder="you@personal-email.com" autocomplete="email"><small>Recommendation digests go only to this address. Clear it to pause digest delivery until another address is added.</small></label>
       <label class="profile-password-field"><span>Current password</span><input type="password" name="current_password" required autocomplete="current-password"><small>Required before changing either email address.</small></label>
       <button class="button" type="submit">Save email address</button>
     </form>
@@ -31,7 +31,7 @@
     <section class="profile-account-facts">
       <article><span>Account ID</span><strong>{{ user.id[:8] }}</strong><small>Private account reference</small></article>
       <article><span>Personalization</span><strong>{{ 'Enabled' if user.personalization_enabled else 'Off' }}</strong><small>Controlled in Preferences</small></article>
-      <article><span>Email digest</span><strong>{{ 'Opted in' if user.digest_enabled else 'Not subscribed' }}</strong><small>{{ 'External delivery address set' if user.digest_email else 'Uses sign-in email' }}</small></article>
+      <article><span>Email digest</span><strong>{{ 'Opted in' if user.digest_enabled else 'Not subscribed' }}</strong><small>{{ 'Delivery address ready' if user.digest_email else 'Digest address required' }}</small></article>
       <article><span>Admin schedule</span><strong>{{ digest_time_gmt }} GMT</strong><small>Operational delivery time</small></article>
     </section>
   </div>

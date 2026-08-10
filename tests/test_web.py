@@ -67,6 +67,7 @@ def test_registration_creates_authenticated_session(client, db):
     assert registered is not None
     assert registered.role == "user"
     assert registered.personalization_enabled is True
+    assert registered.digest_email is None
     profile = db.scalar(select(UserInterestProfile).where(UserInterestProfile.user_id == registered.id))
     assert profile is not None
     assert profile.journey_stage == "exploration"
@@ -342,10 +343,10 @@ def test_only_admin_can_configure_global_digest_time(client, db, user, admin):
     assert admin.digest_time_gmt == "18:45"
 
 
-def test_admin_schedule_time_changes_are_limited_to_three_per_utc_day(client, db, admin):
+def test_admin_schedule_time_changes_are_limited_to_ten_per_utc_day(client, db, admin):
     login(client, "admin@example.com")
     session = db.scalar(select(UserSession).where(UserSession.user_id == admin.id))
-    for value in ["16:00", "17:00", "18:00"]:
+    for value in [f"00:{minute:02d}" for minute in range(1, 11)]:
         response = client.post(
             "/admin/deliveries/schedule-time",
             data={"csrf_token": session.csrf_token, "digest_time_gmt": value},
@@ -356,13 +357,27 @@ def test_admin_schedule_time_changes_are_limited_to_three_per_utc_day(client, db
 
     limited = client.post(
         "/admin/deliveries/schedule-time",
-        data={"csrf_token": session.csrf_token, "digest_time_gmt": "19:00"},
+        data={"csrf_token": session.csrf_token, "digest_time_gmt": "00:11"},
         follow_redirects=False,
     )
     assert limited.status_code == 303
     assert "schedule_limit=true" in limited.headers["location"]
     db.refresh(admin)
-    assert admin.digest_time_gmt == "18:00"
+    assert admin.digest_time_gmt == "00:10"
+
+
+def test_home_prompts_learner_to_add_missing_digest_email(client, db, user, products):
+    user.digest_email = None
+    db.commit()
+    login(client)
+    missing = client.get("/")
+    assert "Receive great course recommendations in your inbox." in missing.text
+    assert 'href="/profile"' in missing.text
+
+    user.digest_email = "digest@personal.example"
+    db.commit()
+    configured = client.get("/")
+    assert "Receive great course recommendations in your inbox." not in configured.text
 
 
 def test_disabled_personalization_drops_behavioral_events(client, db, user):

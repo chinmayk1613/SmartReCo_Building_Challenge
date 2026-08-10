@@ -86,33 +86,33 @@ def test_daily_digest_scheduling_is_idempotent(db, user, admin, active_recommend
     assert delivery.scheduled_for == datetime(2026, 8, 10, 18, 45, tzinfo=timezone.utc)
 
 
-def test_admin_time_changes_create_at_most_three_daily_digests(db, user, admin, active_recommendation):
+def test_admin_time_changes_create_at_most_ten_daily_digests(db, user, admin, active_recommendation):
     user.digest_enabled = True
     admin.digest_time_gmt = "15:00"
     db.commit()
     now = datetime(2026, 8, 10, 10, 0, tzinfo=timezone.utc)
 
     assert schedule_due_digests(now)["created"] == 1
-    assert schedule_admin_digest_slot("11:00", "change-1", now) == {"created": 1, "capped": 0}
-    assert schedule_admin_digest_slot("12:00", "change-2", now) == {"created": 1, "capped": 0}
-    assert schedule_admin_digest_slot("13:00", "change-3", now) == {"created": 0, "capped": 1}
+    for index, value in enumerate([f"{hour:02d}:00" for hour in range(11, 20)], start=1):
+        assert schedule_admin_digest_slot(value, f"change-{index}", now) == {"created": 1, "capped": 0}
+    assert schedule_admin_digest_slot("20:00", "change-10", now) == {"created": 0, "capped": 1}
 
     deliveries = list(db.scalars(select(Delivery).order_by(Delivery.scheduled_for)).all())
-    assert len(deliveries) == 3
-    assert len({delivery.idempotency_key for delivery in deliveries}) == 3
+    assert len(deliveries) == 10
+    assert len({delivery.idempotency_key for delivery in deliveries}) == 10
 
 
-def test_normal_scheduler_cannot_exceed_three_existing_admin_slots(db, user, admin, active_recommendation):
+def test_normal_scheduler_cannot_exceed_ten_existing_admin_slots(db, user, admin, active_recommendation):
     user.digest_enabled = True
     admin.digest_time_gmt = "15:00"
     db.commit()
     now = datetime(2026, 8, 10, 10, 0, tzinfo=timezone.utc)
 
-    for index, value in enumerate(["11:00", "12:00", "13:00"], start=1):
+    for index, value in enumerate([f"{hour:02d}:00" for hour in range(11, 21)], start=1):
         assert schedule_admin_digest_slot(value, f"change-{index}", now)["created"] == 1
 
     assert schedule_due_digests(now)["created"] == 0
-    assert db.query(Delivery).count() == 3
+    assert db.query(Delivery).count() == 10
 
 
 def test_sandbox_dispatch_records_receipt_and_attempt(db, user, active_recommendation):
@@ -131,15 +131,9 @@ def test_sandbox_dispatch_records_receipt_and_attempt(db, user, active_recommend
     assert attempt.provider_status == "accepted"
 
 
-@pytest.mark.parametrize(
-    ("digest_email", "expected_recipient"),
-    [("daily@personal.example", "daily@personal.example"), (None, "learner@example.com")],
-)
-def test_smtp_uses_profile_digest_email_then_login_fallback(
-    db, user, active_recommendation, monkeypatch, digest_email, expected_recipient
-):
-    user.digest_email = digest_email
-    delivery = _queue_delivery(db, user, active_recommendation, f"recipient-{digest_email or 'login'}")
+def test_smtp_uses_only_profile_digest_email(db, user, active_recommendation, monkeypatch):
+    user.digest_email = "daily@personal.example"
+    delivery = _queue_delivery(db, user, active_recommendation, "digest-recipient")
     captured = {}
 
     class FakeSMTP:
@@ -168,8 +162,16 @@ def test_smtp_uses_profile_digest_email_then_login_fallback(
     monkeypatch.setattr(delivery_service.smtplib, "SMTP", FakeSMTP)
     receipt = delivery_service._send_smtp(delivery, user, active_recommendation)
 
-    assert captured["recipient"] == expected_recipient
+    assert captured["recipient"] == "daily@personal.example"
     assert receipt.startswith(f"smtp:{delivery.id}:accepted")
+
+
+def test_digest_requires_configured_digest_email(db, user, active_recommendation):
+    user.digest_enabled = True
+    user.digest_email = None
+    db.commit()
+    assert schedule_due_digests()["created"] == 0
+    assert db.query(Delivery).count() == 0
 
 
 def test_edited_product_cancels_stale_recommendation_before_provider_contact(
@@ -311,6 +313,24 @@ def test_opt_out_after_queue_cancels_before_provider_contact(db, user, active_re
     assert result["sent"] == 0
     assert delivery.status == "cancelled"
     assert attempt.provider_status == "consent_withdrawn"
+
+
+def test_removed_digest_email_cancels_before_provider_contact(db, user, active_recommendation, monkeypatch):
+    delivery = _queue_delivery(db, user, active_recommendation, "digest-address-removed")
+    user.digest_email = None
+    db.commit()
+    provider_calls = []
+    monkeypatch.setattr(get_settings(), "delivery_mode", "smtp")
+    monkeypatch.setattr(delivery_service, "_send_smtp", lambda *_args: provider_calls.append(True))
+
+    result = dispatch_due_deliveries()
+
+    db.refresh(delivery)
+    attempt = db.scalar(select(DeliveryAttempt).where(DeliveryAttempt.delivery_id == delivery.id))
+    assert result["sent"] == 0
+    assert provider_calls == []
+    assert delivery.status == "cancelled"
+    assert attempt.provider_status == "digest_email_missing"
 
 
 def test_two_dispatchers_cannot_send_one_delivery_twice(db, user, active_recommendation):

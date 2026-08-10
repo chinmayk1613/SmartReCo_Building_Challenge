@@ -12,7 +12,7 @@ from app.db import SessionLocal
 from app.models import Delivery, DeliveryAttempt, Product, Recommendation, RecommendationItem, User, utcnow
 
 
-MAX_DAILY_DIGESTS = 3
+MAX_DAILY_DIGESTS = 10
 
 
 def _aware(value: datetime) -> datetime:
@@ -71,7 +71,10 @@ def schedule_admin_digest_slot(time_gmt: str, slot_key: str, now: datetime | Non
     try:
         users = db.scalars(
             select(User).where(
-                User.is_active.is_(True), User.personalization_enabled.is_(True), User.digest_enabled.is_(True)
+                User.is_active.is_(True),
+                User.personalization_enabled.is_(True),
+                User.digest_enabled.is_(True),
+                User.digest_email.is_not(None),
             )
         ).all()
         for user in users:
@@ -110,7 +113,10 @@ def schedule_due_digests(now: datetime | None = None) -> dict[str, int]:
     try:
         users = db.scalars(
             select(User).where(
-                User.is_active.is_(True), User.personalization_enabled.is_(True), User.digest_enabled.is_(True)
+                User.is_active.is_(True),
+                User.personalization_enabled.is_(True),
+                User.digest_enabled.is_(True),
+                User.digest_email.is_not(None),
             )
         ).all()
         digest_hour, digest_minute = (int(part) for part in configured_digest_time_gmt(db).split(":"))
@@ -152,7 +158,9 @@ def _send_smtp(delivery: Delivery, user: User, recommendation: Recommendation) -
     message = EmailMessage()
     message["Subject"] = recommendation.headline
     message["From"] = settings.smtp_from
-    message["To"] = user.digest_email or user.email
+    if not user.digest_email:
+        raise RuntimeError("Daily digest email address is required")
+    message["To"] = user.digest_email
     db = SessionLocal()
     try:
         items = db.execute(
@@ -238,6 +246,12 @@ def dispatch_due_deliveries(now: datetime | None = None, limit: int = 25) -> dic
                     delivery.status = "cancelled"
                     attempt.status = "cancelled"
                     attempt.provider_status = "consent_withdrawn"
+                    db.commit()
+                    continue
+                if not user.digest_email:
+                    delivery.status = "cancelled"
+                    attempt.status = "cancelled"
+                    attempt.provider_status = "digest_email_missing"
                     db.commit()
                     continue
                 expires = recommendation.expires_at

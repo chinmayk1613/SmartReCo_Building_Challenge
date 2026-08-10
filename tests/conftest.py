@@ -57,7 +57,7 @@ def client():
 
 @pytest.fixture
 def user(db):
-    value = User(email="learner@example.com", display_name="Learner", password_hash=hash_password("VeryStrong123!"))
+    value = User(email="learner@example.com", digest_email="digest@personal.example", display_name="Learner", password_hash=hash_password("VeryStrong123!"))
     db.add(value)
     db.commit()
     return value
