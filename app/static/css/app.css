@@ -216,5 +216,10 @@ h1 em,h2 em { font-style: normal; color: transparent; background: var(--mesh); b
 .reconciliation-explanation { max-width:760px; margin-top:.45rem !important; color:#5f677d !important; font-size:.66rem !important; line-height:1.55; }
 .chart-filter-control { display:grid; justify-items:end; gap:.3rem; min-width:170px; }
 .chart-filter-control small { max-width:190px; color:#747c91; font-size:.55rem; line-height:1.35; text-align:right; }
-.kpi-dialog-controls-top { margin-top:0; padding:14px 34px; border-top:0; border-bottom:1px solid #ddddec; background:rgba(245,245,252,.75); }
+.kpi-dialog-controls-top { justify-content:flex-start; align-items:end; flex-flow:row wrap; gap:16px; margin-top:0; padding:14px 34px; border-top:0; border-bottom:1px solid #ddddec; background:rgba(245,245,252,.75); }
+.kpi-dialog-controls-top .kpi-view-switch { width:auto; }
+.kpi-dialog-controls-top .kpi-range-control { display:grid; grid-template-columns:140px auto 140px; align-items:end; gap:8px; width:auto; }
+.kpi-dialog-controls-top .kpi-range-control > label { width:auto; }
+.kpi-dialog-controls-top .kpi-range-control > span { display:block; padding-bottom:10px; }
+.kpi-dialog-controls-top .kpi-range-control input { min-width:0; width:140px; }
 @media (max-width:900px) { .reconciliation-detail-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
