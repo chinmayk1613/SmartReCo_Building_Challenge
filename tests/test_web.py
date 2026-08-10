@@ -250,6 +250,7 @@ def test_profile_shows_account_details_with_only_email_editable(client, user):
     assert user.display_name in response.text
     assert "Not collected by SmartReco" in response.text
     assert 'name="email_local"' in response.text
+    assert 'name="digest_email"' in response.text
     assert 'name="current_password"' in response.text
     assert 'name="display_name"' not in response.text
     assert 'name="phone"' not in response.text
@@ -264,6 +265,7 @@ def test_profile_email_change_preserves_domain_and_readonly_identity(client, db,
         data={
             "csrf_token": session.csrf_token,
             "email_local": "updated.learner",
+            "digest_email": "daily.digest@personal.example",
             "current_password": "VeryStrong123!",
             "display_name": "Attempted Change",
             "phone": "+1 555 0100",
@@ -272,10 +274,32 @@ def test_profile_email_change_preserves_domain_and_readonly_identity(client, db,
     db.refresh(user)
     assert response.status_code == 200
     assert user.email == "updated.learner@example.com"
+    assert user.digest_email == "daily.digest@personal.example"
     assert user.display_name == original_name
     audit = db.scalar(select(AuditLog).where(AuditLog.action == "user.email.updated"))
     assert audit is not None
     assert "updated.learner@example.com" not in str(audit.audit_metadata)
+    assert "daily.digest@personal.example" not in str(audit.audit_metadata)
+
+
+def test_profile_digest_email_can_be_cleared_without_changing_login_email(client, db, user):
+    user.digest_email = "digest@personal.example"
+    db.commit()
+    login(client)
+    session = db.scalar(select(UserSession).where(UserSession.user_id == user.id))
+    response = client.post(
+        "/profile",
+        data={
+            "csrf_token": session.csrf_token,
+            "email_local": "learner",
+            "digest_email": "",
+            "current_password": "VeryStrong123!",
+        },
+    )
+    db.refresh(user)
+    assert response.status_code == 200
+    assert user.email == "learner@example.com"
+    assert user.digest_email is None
 
 
 def test_profile_email_change_requires_password_and_unique_local_part(client, db, user):

@@ -34,7 +34,7 @@ from app.models import (
     UserSession,
     utcnow,
 )
-from app.schemas import EventBatchInput, ProductInput, RegisterInput
+from app.schemas import DigestEmailInput, EventBatchInput, ProductInput, RegisterInput
 from app.security import create_session, hash_password, verify_password
 from app.services.admin_overview import build_overview_detail
 from app.services.catalog import archive_product, create_product, get_active_products, update_product
@@ -584,6 +584,7 @@ def profile_update_email(
     request: Request,
     csrf_token: str = Form(...),
     email_local: str = Form(...),
+    digest_email: str = Form(""),
     current_password: str = Form(...),
     db: Session = Depends(get_db),
 ):
@@ -607,6 +608,18 @@ def profile_update_email(
     current_email = user.email.lower()
     email_domain = current_email.rsplit("@", 1)[1]
     updated_email = f"{local_part}@{email_domain}"
+    digest_email_value = digest_email.strip()
+    try:
+        updated_digest_email = (
+            str(DigestEmailInput(email=digest_email_value).email).lower() if digest_email_value else None
+        )
+    except ValueError:
+        return templates.TemplateResponse(
+            request,
+            "profile.html",
+            _profile_template_context(request, db, user, saved=False, error="Enter a valid daily digest email address."),
+            status_code=400,
+        )
     duplicate = db.scalar(select(User.id).where(User.email == updated_email, User.id != user.id))
     if duplicate:
         return templates.TemplateResponse(
@@ -615,18 +628,26 @@ def profile_update_email(
             _profile_template_context(request, db, user, saved=False, error="That email account name is already in use."),
             status_code=400,
         )
-    if updated_email != current_email:
+    email_changed = updated_email != current_email
+    digest_email_changed = updated_digest_email != user.digest_email
+    if email_changed or digest_email_changed:
+        previous_digest_email = user.digest_email
         user.email = updated_email
+        user.digest_email = updated_digest_email
         db.add(
             AuditLog(
                 actor_user_id=user.id,
-                action="user.email.updated",
+                action="user.email.updated" if email_changed else "user.digest_email.updated",
                 object_type="user",
                 object_id=user.id,
                 audit_metadata={
                     "old_email_hash": hashlib.sha256(current_email.encode()).hexdigest(),
                     "new_email_hash": hashlib.sha256(updated_email.encode()).hexdigest(),
                     "domain": email_domain,
+                    "digest_email_changed": digest_email_changed,
+                    "old_digest_email_hash": hashlib.sha256(previous_digest_email.encode()).hexdigest() if previous_digest_email else None,
+                    "new_digest_email_hash": hashlib.sha256(updated_digest_email.encode()).hexdigest() if updated_digest_email else None,
+                    "digest_email_configured": bool(updated_digest_email),
                 },
             )
         )

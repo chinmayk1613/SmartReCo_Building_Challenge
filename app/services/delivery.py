@@ -152,7 +152,7 @@ def _send_smtp(delivery: Delivery, user: User, recommendation: Recommendation) -
     message = EmailMessage()
     message["Subject"] = recommendation.headline
     message["From"] = settings.smtp_from
-    message["To"] = user.email
+    message["To"] = user.digest_email or user.email
     db = SessionLocal()
     try:
         items = db.execute(

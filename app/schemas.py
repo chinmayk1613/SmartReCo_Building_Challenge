@@ -29,6 +29,10 @@ class RegisterInput(BaseModel):
     password: str = Field(min_length=10, max_length=200)
 
 
+class DigestEmailInput(BaseModel):
+    email: EmailStr
+
+
 class ProductInput(BaseModel):
     title: str = Field(min_length=3, max_length=240)
     slug: str = Field(pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$", max_length=160)

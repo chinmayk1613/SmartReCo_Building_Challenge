@@ -52,6 +52,7 @@ class User(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     email: Mapped[str] = mapped_column(String(320), unique=True, index=True)
+    digest_email: Mapped[str | None] = mapped_column(String(320), nullable=True)
     password_hash: Mapped[str] = mapped_column(String(512))
     display_name: Mapped[str] = mapped_column(String(120))
     role: Mapped[str] = mapped_column(String(20), default="user", index=True)

@@ -131,6 +131,47 @@ def test_sandbox_dispatch_records_receipt_and_attempt(db, user, active_recommend
     assert attempt.provider_status == "accepted"
 
 
+@pytest.mark.parametrize(
+    ("digest_email", "expected_recipient"),
+    [("daily@personal.example", "daily@personal.example"), (None, "learner@example.com")],
+)
+def test_smtp_uses_profile_digest_email_then_login_fallback(
+    db, user, active_recommendation, monkeypatch, digest_email, expected_recipient
+):
+    user.digest_email = digest_email
+    delivery = _queue_delivery(db, user, active_recommendation, f"recipient-{digest_email or 'login'}")
+    captured = {}
+
+    class FakeSMTP:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def starttls(self):
+            return None
+
+        def login(self, *_args):
+            return None
+
+        def send_message(self, message):
+            captured["recipient"] = message["To"]
+            return {}
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "smtp_host", "smtp.test")
+    monkeypatch.setattr(settings, "smtp_username", None)
+    monkeypatch.setattr(delivery_service.smtplib, "SMTP", FakeSMTP)
+    receipt = delivery_service._send_smtp(delivery, user, active_recommendation)
+
+    assert captured["recipient"] == expected_recipient
+    assert receipt.startswith(f"smtp:{delivery.id}:accepted")
+
+
 def test_edited_product_cancels_stale_recommendation_before_provider_contact(
     db, user, products, active_recommendation, monkeypatch
 ):
