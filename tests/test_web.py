@@ -6,6 +6,7 @@ from sqlalchemy import select
 
 from app.models import (
     ActivityEvent,
+    AuditLog,
     Product,
     Recommendation,
     RecommendationItem,
@@ -240,6 +241,62 @@ def test_user_can_opt_in_to_personalization_and_digest(client, db, user):
     assert user.digest_enabled is True
     assert user.digest_time_gmt == "15:00"
     assert 'name="digest_time_gmt"' not in response.text
+
+
+def test_profile_shows_account_details_with_only_email_editable(client, user):
+    login(client)
+    response = client.get("/profile")
+    assert response.status_code == 200
+    assert user.display_name in response.text
+    assert "Not collected by SmartReco" in response.text
+    assert 'name="email_local"' in response.text
+    assert 'name="current_password"' in response.text
+    assert 'name="display_name"' not in response.text
+    assert 'name="phone"' not in response.text
+
+
+def test_profile_email_change_preserves_domain_and_readonly_identity(client, db, user):
+    original_name = user.display_name
+    login(client)
+    session = db.scalar(select(UserSession).where(UserSession.user_id == user.id))
+    response = client.post(
+        "/profile",
+        data={
+            "csrf_token": session.csrf_token,
+            "email_local": "updated.learner",
+            "current_password": "VeryStrong123!",
+            "display_name": "Attempted Change",
+            "phone": "+1 555 0100",
+        },
+    )
+    db.refresh(user)
+    assert response.status_code == 200
+    assert user.email == "updated.learner@example.com"
+    assert user.display_name == original_name
+    audit = db.scalar(select(AuditLog).where(AuditLog.action == "user.email.updated"))
+    assert audit is not None
+    assert "updated.learner@example.com" not in str(audit.audit_metadata)
+
+
+def test_profile_email_change_requires_password_and_unique_local_part(client, db, user):
+    other = User(email="taken@example.com", display_name="Other", password_hash=hash_password("VeryStrong123!"))
+    db.add(other)
+    db.commit()
+    login(client)
+    session = db.scalar(select(UserSession).where(UserSession.user_id == user.id))
+
+    wrong_password = client.post(
+        "/profile",
+        data={"csrf_token": session.csrf_token, "email_local": "new", "current_password": "incorrect"},
+    )
+    duplicate = client.post(
+        "/profile",
+        data={"csrf_token": session.csrf_token, "email_local": "taken", "current_password": "VeryStrong123!"},
+    )
+    db.refresh(user)
+    assert wrong_password.status_code == 400
+    assert duplicate.status_code == 400
+    assert user.email == "learner@example.com"
 
 
 def test_only_admin_can_configure_global_digest_time(client, db, user, admin):

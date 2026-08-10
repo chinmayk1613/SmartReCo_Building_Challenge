@@ -7,7 +7,7 @@
   <link rel="icon" href="{{ url_for('static', path='/favicon.svg') }}" type="image/svg+xml">
   {% if current_session %}<meta name="csrf-token" content="{{ current_session.csrf_token }}">{% endif %}
   <title>{% block title %}SmartReco{% endblock %}</title>
-  <link rel="stylesheet" href="{{ url_for('static', path='/css/app.css') }}?v=17">
+  <link rel="stylesheet" href="{{ url_for('static', path='/css/app.css') }}?v=18">
 </head>
 <body data-user-id="{{ current_user.id if current_user else '' }}">
   <header class="site-header">
@@ -30,6 +30,7 @@
     <div class="header-actions">
       {% if current_user %}
         {% if current_user.role == 'user' %}<a class="cart-link" href="/cart">My cart <span data-cart-count>{{ cart_count }}</span></a>{% endif %}
+        <a class="text-link" href="/profile">Profile</a>
         <a class="text-link" href="/account">Preferences</a>
         <span class="user-avatar" title="{{ current_user.display_name }}">{{ current_user.display_name[:1]|upper }}</span>
         <form action="/logout" method="post">

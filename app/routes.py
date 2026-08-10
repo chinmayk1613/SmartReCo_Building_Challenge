@@ -555,6 +555,98 @@ def logout(request: Request, csrf_token: str = Form(...), db: Session = Depends(
     return response
 
 
+def _profile_template_context(request: Request, db: Session, user: User, **values):
+    email_local, email_domain = user.email.rsplit("@", 1)
+    return context(
+        request,
+        db,
+        user=user,
+        email_local=email_local,
+        email_domain=email_domain,
+        phone_display="Not collected by SmartReco",
+        digest_time_gmt=configured_digest_time_gmt(db),
+        **values,
+    )
+
+
+@router.get("/profile", response_class=HTMLResponse)
+def profile_page(request: Request, db: Session = Depends(get_db)):
+    user, _session = require_user(request, db)
+    return templates.TemplateResponse(
+        request,
+        "profile.html",
+        _profile_template_context(request, db, user, saved=False, error=None),
+    )
+
+
+@router.post("/profile", response_class=HTMLResponse)
+def profile_update_email(
+    request: Request,
+    csrf_token: str = Form(...),
+    email_local: str = Form(...),
+    current_password: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    user, session = require_user(request, db)
+    validate_csrf(request, session, csrf_token)
+    if not verify_password(user.password_hash, current_password):
+        return templates.TemplateResponse(
+            request,
+            "profile.html",
+            _profile_template_context(request, db, user, saved=False, error="Current password is incorrect."),
+            status_code=400,
+        )
+    local_part = email_local.strip().lower()
+    if not re.fullmatch(r"[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?", local_part) or ".." in local_part:
+        return templates.TemplateResponse(
+            request,
+            "profile.html",
+            _profile_template_context(request, db, user, saved=False, error="Enter a valid email account name."),
+            status_code=400,
+        )
+    current_email = user.email.lower()
+    email_domain = current_email.rsplit("@", 1)[1]
+    updated_email = f"{local_part}@{email_domain}"
+    duplicate = db.scalar(select(User.id).where(User.email == updated_email, User.id != user.id))
+    if duplicate:
+        return templates.TemplateResponse(
+            request,
+            "profile.html",
+            _profile_template_context(request, db, user, saved=False, error="That email account name is already in use."),
+            status_code=400,
+        )
+    if updated_email != current_email:
+        user.email = updated_email
+        db.add(
+            AuditLog(
+                actor_user_id=user.id,
+                action="user.email.updated",
+                object_type="user",
+                object_id=user.id,
+                audit_metadata={
+                    "old_email_hash": hashlib.sha256(current_email.encode()).hexdigest(),
+                    "new_email_hash": hashlib.sha256(updated_email.encode()).hexdigest(),
+                    "domain": email_domain,
+                },
+            )
+        )
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            return templates.TemplateResponse(
+                request,
+                "profile.html",
+                _profile_template_context(request, db, user, saved=False, error="That email account name is already in use."),
+                status_code=400,
+            )
+    return templates.TemplateResponse(
+        request,
+        "profile.html",
+        _profile_template_context(request, db, user, saved=True, error=None),
+    )
+
+
 @router.get("/account", response_class=HTMLResponse)
 def account_page(request: Request, db: Session = Depends(get_db)):
     user, _session = require_user(request, db)

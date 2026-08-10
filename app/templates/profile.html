@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Your profile — SmartReco{% endblock %}
+{% block content %}
+<section class="profile-layout shell">
+  <aside class="profile-summary-card">
+    <span class="section-index">Your account</span>
+    <div class="profile-avatar-large">{{ user.display_name[:1]|upper }}</div>
+    <h1>{{ user.display_name }}</h1>
+    <p>Your identity details and account status in one place.</p>
+    <div class="profile-status-row"><span>Account</span><strong>{{ 'Active' if user.is_active else 'Inactive' }}</strong></div>
+    <div class="profile-status-row"><span>Role</span><strong>{{ user.role|title }}</strong></div>
+    <div class="profile-status-row"><span>Member since</span><strong>{{ user.created_at|utc_time('%d %b %Y') }} UTC</strong></div>
+  </aside>
+
+  <div class="profile-content">
+    <div class="profile-heading"><span class="eyebrow">Profile details</span><h2>Account information</h2><p>Email is the only editable identity field. Your current password is required to protect the change.</p></div>
+    <form class="profile-form-card" action="/profile" method="post">
+      {% if saved %}<p class="success">Profile email saved. Use the updated address the next time you sign in.</p>{% endif %}
+      {% if error %}<p class="error">{{ error }}</p>{% endif %}
+      <input type="hidden" name="csrf_token" value="{{ current_session.csrf_token }}">
+      <div class="profile-field-grid">
+        <label class="profile-readonly"><span>Full name</span><strong>{{ user.display_name }}</strong><small>Managed identity · cannot be edited</small></label>
+        <label class="profile-readonly"><span>Phone number</span><strong>{{ phone_display }}</strong><small>Not stored · cannot be edited</small></label>
+      </div>
+      <label class="profile-email-field"><span>Email address</span><span class="fixed-email"><input name="email_local" value="{{ email_local }}" required maxlength="64" pattern="[A-Za-z0-9][A-Za-z0-9._-]*" autocomplete="email"><strong>@{{ email_domain }}</strong></span><small>The existing domain is fixed; only the account name can change.</small></label>
+      <label class="profile-password-field"><span>Current password</span><input type="password" name="current_password" required autocomplete="current-password"><small>Required before changing the sign-in email.</small></label>
+      <button class="button" type="submit">Save email address</button>
+    </form>
+
+    <section class="profile-account-facts">
+      <article><span>Account ID</span><strong>{{ user.id[:8] }}</strong><small>Private account reference</small></article>
+      <article><span>Personalization</span><strong>{{ 'Enabled' if user.personalization_enabled else 'Off' }}</strong><small>Controlled in Preferences</small></article>
+      <article><span>Email digest</span><strong>{{ 'Opted in' if user.digest_enabled else 'Not subscribed' }}</strong><small>Explicit learner consent</small></article>
+      <article><span>Admin schedule</span><strong>{{ digest_time_gmt }} GMT</strong><small>Operational delivery time</small></article>
+    </section>
+  </div>
+</section>
+{% endblock %}
