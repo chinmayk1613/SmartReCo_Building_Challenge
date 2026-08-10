@@ -2,17 +2,25 @@
   const root = document.querySelector('[data-observability-root]');
   if (!root) return;
   const selectedPageDate = root.dataset.selectedDate || '';
+  const selectedPageStartDate = root.dataset.selectedStartDate || selectedPageDate;
+  const selectedPageEndDate = root.dataset.selectedEndDate || selectedPageDate;
+  const selectedPageSingleDate = selectedPageStartDate === selectedPageEndDate ? selectedPageStartDate : '';
   const timeline = root.querySelector('[data-observability-timeline]');
   const updated = root.querySelector('[data-observability-updated]');
   const dialog = root.querySelector('[data-kpi-dialog]');
   const detailLoading = dialog?.querySelector('[data-kpi-loading]');
   const detailDate = dialog?.querySelector('[data-kpi-date]');
+  const detailDateControl = dialog?.querySelector('[data-kpi-date-control]');
+  const detailRangeControl = dialog?.querySelector('[data-kpi-range-control]');
+  const detailStartDate = dialog?.querySelector('[data-kpi-start-date]');
+  const detailEndDate = dialog?.querySelector('[data-kpi-end-date]');
   let polling = false;
   let detailPolling = false;
   let activeMetric = '';
   let activeDetail = null;
   const chartSelections = new Map();
   const detailDateSelections = new Map();
+  const detailRangeSelections = new Map();
   const NUMBER_LOCALE = 'en-IN';
   const TIME_ZONE = 'UTC';
 
@@ -154,13 +162,16 @@
 
   const renderUserView = () => {
     if (!activeDetail) return;
-    const selectedDate = detailDate.value;
+    const selectedDate = activeMetric === 'llm_calls' ? '' : detailDate.value;
     const rows = selectedDate ? (activeDetail.users_by_date[selectedDate] || []) : activeDetail.users;
     renderTable(
       dialog.querySelector('[data-kpi-user-head]'), dialog.querySelector('[data-kpi-user-body]'),
       rows, activeDetail.columns, {key: 'user_name', secondary: 'user_id', label: 'Learner'},
     );
-    dialog.querySelector('[data-kpi-user-scope]').textContent = selectedDate || 'All dates';
+    const range = detailRangeSelections.get(activeMetric);
+    dialog.querySelector('[data-kpi-user-scope]').textContent = activeMetric === 'llm_calls' && (range?.start || range?.end)
+      ? `${range.start || 'Beginning'} to ${range.end || 'Latest'}`
+      : selectedDate || 'All dates';
   };
 
   const svgElement = (name, attributes = {}) => {
@@ -320,7 +331,9 @@
     });
     section.append(grid);
     const foot = document.createElement('small');
-    const dateScope = data.selected_date ? `${data.selected_date} UTC` : 'all recorded UTC dates';
+    const dateScope = data.selected_start_date || data.selected_end_date
+      ? `${data.selected_start_date || 'beginning'} through ${data.selected_end_date || 'latest'} UTC`
+      : data.selected_date ? `${data.selected_date} UTC` : 'all recorded UTC dates';
     foot.textContent = data.metric === 'total_tokens'
       ? `${value.token_comparable_spans || 0} comparable span(s) / ${value.token_uncomparable_attempts || 0} local attempt(s) outside the usage-aware cohort / ${dateScope}`
       : data.metric === 'average_latency'
@@ -400,12 +413,22 @@
       dialog.querySelector('[data-kpi-date-head]'), dialog.querySelector('[data-kpi-date-body]'),
       data.daily, data.columns, {key: 'date', label: 'UTC date'},
     );
-    const previousDate = data.selected_date || detailDateSelections.get(data.metric) || detailDate.value;
-    detailDate.replaceChildren();
-    const all = document.createElement('option'); all.value = ''; all.textContent = 'All recorded dates'; detailDate.append(all);
-    (data.available_dates || []).forEach((date) => { const option = document.createElement('option'); option.value = date; option.textContent = date; detailDate.append(option); });
-    if ([...detailDate.options].some((option) => option.value === previousDate)) detailDate.value = previousDate;
-    detailDateSelections.set(data.metric, detailDate.value);
+    const usesRange = data.metric === 'llm_calls';
+    detailDateControl.hidden = usesRange;
+    detailRangeControl.hidden = !usesRange;
+    if (usesRange) {
+      const previousRange = detailRangeSelections.get(data.metric) || {};
+      detailStartDate.value = data.selected_start_date || previousRange.start || selectedPageStartDate;
+      detailEndDate.value = data.selected_end_date || previousRange.end || selectedPageEndDate;
+      detailRangeSelections.set(data.metric, {start: detailStartDate.value, end: detailEndDate.value});
+    } else {
+      const previousDate = data.selected_date || detailDateSelections.get(data.metric) || detailDate.value;
+      detailDate.replaceChildren();
+      const all = document.createElement('option'); all.value = ''; all.textContent = 'All recorded dates'; detailDate.append(all);
+      (data.available_dates || []).forEach((date) => { const option = document.createElement('option'); option.value = date; option.textContent = date; detailDate.append(option); });
+      if ([...detailDate.options].some((option) => option.value === previousDate)) detailDate.value = previousDate;
+      detailDateSelections.set(data.metric, detailDate.value);
+    }
     renderUserView();
     dialog.querySelector('[data-kpi-updated]').textContent = formatUtcDateTime(data.generated_at, false);
   };
@@ -416,8 +439,14 @@
     if (showLoading) detailLoading.hidden = false;
     try {
       const params = new URLSearchParams({metric});
-      const selectedDate = detailDateSelections.get(metric) || detailDate.value || selectedPageDate;
-      if (selectedDate) params.set('date', selectedDate);
+      if (metric === 'llm_calls') {
+        const range = detailRangeSelections.get(metric) || {start: detailStartDate.value, end: detailEndDate.value};
+        if (range.start) params.set('start_date', range.start);
+        if (range.end) params.set('end_date', range.end);
+      } else {
+        const selectedDate = detailDateSelections.get(metric) || detailDate.value || selectedPageSingleDate;
+        if (selectedDate) params.set('date', selectedDate);
+      }
       const response = await fetch(`/api/admin/observability/details?${params}`, {headers: {'Accept': 'application/json'}, cache: 'no-store'});
       if (!response.ok) throw new Error('KPI details unavailable');
       renderDetail(await response.json());
@@ -434,7 +463,10 @@
     if (polling) return;
     polling = true;
     try {
-      const query = selectedPageDate ? `?date=${encodeURIComponent(selectedPageDate)}` : '';
+      const params = new URLSearchParams();
+      if (selectedPageStartDate) params.set('start_date', selectedPageStartDate);
+      if (selectedPageEndDate) params.set('end_date', selectedPageEndDate);
+      const query = params.size ? `?${params}` : '';
       const response = await fetch(`/api/admin/observability${query}`, {headers: {'Accept': 'application/json'}, cache: 'no-store'});
       if (!response.ok) return;
       const data = await response.json(); const metrics = data.metrics;
@@ -462,7 +494,14 @@
   root.querySelectorAll('[data-kpi-detail]').forEach((button) => {
     button.addEventListener('click', () => {
       activeMetric = button.dataset.kpiDetail;
-      detailDate.value = detailDateSelections.get(activeMetric) || selectedPageDate || '';
+      if (activeMetric === 'llm_calls') {
+        const range = detailRangeSelections.get(activeMetric) || {start: selectedPageStartDate, end: selectedPageEndDate};
+        detailStartDate.value = range.start || '';
+        detailEndDate.value = range.end || '';
+        detailRangeSelections.set(activeMetric, {start: detailStartDate.value, end: detailEndDate.value});
+      } else {
+        detailDate.value = detailDateSelections.get(activeMetric) || selectedPageSingleDate || '';
+      }
       if (typeof dialog.showModal === 'function') dialog.showModal(); else dialog.setAttribute('open', '');
       loadDetail(activeMetric, true);
     });
@@ -483,6 +522,11 @@
     detailDateSelections.set(activeMetric, detailDate.value);
     loadDetail(activeMetric, true);
   });
+  [detailStartDate, detailEndDate].forEach((control) => control?.addEventListener('change', () => {
+    if (activeMetric !== 'llm_calls') return;
+    detailRangeSelections.set(activeMetric, {start: detailStartDate.value, end: detailEndDate.value});
+    loadDetail(activeMetric, true);
+  }));
 
   refresh();
   setInterval(refresh, 1000);

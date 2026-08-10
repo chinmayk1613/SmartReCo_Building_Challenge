@@ -525,7 +525,7 @@ def test_agent_runs_live_api_exposes_scope_source_and_node(client, db, admin, us
     assert item["current_node"] == "retrieve_and_rank"
 
 
-def test_observability_main_filter_is_utc_date_scoped(client, db, admin, user):
+def test_observability_main_filter_is_utc_date_range_scoped(client, db, admin, user):
     second = User(email="second@example.com", display_name="Second Learner", password_hash=hash_password("VeryStrong123!"))
     db.add(second); db.commit()
     db.add_all([
@@ -533,27 +533,33 @@ def test_observability_main_filter_is_utc_date_scoped(client, db, admin, user):
         ServiceInvocation(user_id=second.id, service="rag", operation="retrieve", status="succeeded", started_at=datetime(2026, 8, 4, 10, tzinfo=timezone.utc)),
     ]); db.commit()
     login(client, "admin@example.com")
-    response = client.get("/admin/observability?date=2026-08-05")
+    response = client.get("/admin/observability?start_date=2026-08-05&end_date=2026-08-05")
     assert response.status_code == 200
     assert "30" in response.text
     timeline = response.text.split("Invocation timeline", 1)[1]
     assert "Second Learner" not in timeline
     assert ">RAG<" not in timeline
-    assert "Filter all telemetry by UTC date" in response.text
+    assert "From UTC date" in response.text
+    assert "To UTC date" in response.text
     assert "Filter all telemetry by learner" not in response.text
-    assert "2026-08-05 UTC</strong>" in response.text
-    live = client.get("/api/admin/observability?date=2026-08-05").json()
+    assert response.text.count("2026-08-05 UTC</strong>") == 2
+    live = client.get("/api/admin/observability?start_date=2026-08-05&end_date=2026-08-05").json()
     assert live["metrics"]["total_tokens"] == 30
     assert live["items"][0]["user_name"] == user.display_name
-    assert live["selected_date"] == "2026-08-05"
+    assert live["selected_date"] == ""
+    assert live["selected_start_date"] == "2026-08-05"
+    assert live["selected_end_date"] == "2026-08-05"
     assert live["available_dates"] == ["2026-08-05", "2026-08-04"]
     assert "refreshed_at" in live
-    assert 'observability.js?v=14' in response.text
+    assert 'observability.js?v=15' in response.text
     assert "data-observability-updated" in response.text
     assert response.text.count('data-kpi-detail=') == 8
     assert 'data-kpi-dialog' in response.text
     dialog_markup = response.text.split('data-kpi-dialog', 1)[1]
     assert dialog_markup.index('kpi-dialog-controls-top') < dialog_markup.index('data-kpi-health')
+    assert 'data-kpi-range-control hidden' in dialog_markup
+    assert 'data-kpi-start-date' in dialog_markup
+    assert 'data-kpi-end-date' in dialog_markup
     detail = client.get(f"/api/admin/observability/details?metric=llm_calls&user_id={user.id}").json()
     assert detail["metric"] == "llm_calls"
     assert detail["summary"]["calls"] == 1
@@ -561,7 +567,8 @@ def test_observability_main_filter_is_utc_date_scoped(client, db, admin, user):
     assert detail["date_grain"] == "UTC day"
     assert detail["users"][0]["user_name"] == user.display_name
     assert detail["users"][0]["user_id"] == user.id
-    assert client.get("/api/admin/observability?date=not-a-date").status_code == 400
+    assert client.get("/api/admin/observability?start_date=not-a-date").status_code == 400
+    assert client.get("/api/admin/observability?start_date=2026-08-06&end_date=2026-08-05").status_code == 400
 
 
 def test_observability_details_are_date_and_user_grained(client, db, admin, user):
@@ -594,6 +601,12 @@ def test_observability_details_are_date_and_user_grained(client, db, admin, user
     assert len(filtered["daily"]) == 1
     assert filtered["daily"][0]["date"] == selected_date
     assert filtered["summary"]["calls"] == filtered["daily"][0]["calls"]
+    range_filtered = client.get(
+        f"/api/admin/observability/details?metric=llm_calls&start_date={detail['available_dates'][-1]}&end_date={detail['available_dates'][0]}"
+    ).json()
+    assert range_filtered["selected_start_date"] == detail["available_dates"][-1]
+    assert range_filtered["selected_end_date"] == detail["available_dates"][0]
+    assert range_filtered["summary"]["calls"] == detail["summary"]["calls"]
     assert detail["columns"][0] == {"key": "calls", "label": "Attempts", "format": "integer"}
 
     for metric in ["total_tokens", "estimated_cost", "rag_calls", "mcp_calls", "graph_runs", "average_latency", "failures"]:

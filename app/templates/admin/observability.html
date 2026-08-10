@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 {% block title %}Observability &mdash; SmartReco{% endblock %}
 {% block content %}
-<section class="shell admin-page observability-page" data-observability-root data-selected-date="{{ selected_date }}">
+<section class="shell admin-page observability-page" data-observability-root data-selected-date="{{ selected_date }}" data-selected-start-date="{{ selected_start_date }}" data-selected-end-date="{{ selected_end_date }}">
   <div class="section-heading">
     <div><span class="eyebrow">Agent observability</span><h1>Cost, model, and service telemetry</h1><p>Durable local evidence for every learner-scoped LLM, RAG, MCP, signal, and LangGraph call.</p></div>
     <div class="observability-live-state"><small>Updated <time data-observability-updated>now</time></small><span class="status {{ 'good' if langsmith_connected else 'warn' }}">LangSmith {{ 'connected' if langsmith_connected else 'awaiting separate key' }}</span></div>
   </div>
-  <form class="observability-filter" method="get"><label>Filter all telemetry by UTC date<select name="date"><option value="">All recorded dates</option>{% for available_date in available_dates %}<option value="{{ available_date }}" {{ 'selected' if selected_date == available_date }}>{{ available_date }} UTC</option>{% endfor %}</select></label><button class="button button-small" type="submit">Apply date</button>{% if selected_date %}<a href="/admin/observability">Clear</a>{% endif %}</form>
-  {% if selected_date %}<div class="filter-notice">Showing all learners and services recorded on <strong>{{ selected_date }} UTC</strong>. Live updates remain scoped to this date until you clear or change it.</div>{% endif %}
+  <form class="observability-filter" method="get"><label>From UTC date<input type="date" name="start_date" value="{{ selected_start_date }}"></label><label>To UTC date<input type="date" name="end_date" value="{{ selected_end_date }}"></label><button class="button button-small" type="submit">Apply range</button>{% if selected_start_date or selected_end_date %}<a href="/admin/observability">Clear</a>{% endif %}</form>
+  {% if selected_start_date or selected_end_date %}<div class="filter-notice">Showing all learners and services recorded {% if selected_start_date and selected_end_date %}from <strong>{{ selected_start_date }} UTC</strong> through <strong>{{ selected_end_date }} UTC</strong>{% elif selected_start_date %}from <strong>{{ selected_start_date }} UTC</strong> onward{% else %}through <strong>{{ selected_end_date }} UTC</strong>{% endif %}. Live updates remain scoped to this range until you clear or change it.</div>{% endif %}
 
   <div class="metric-grid observability-metrics">
     <div class="metric observability-kpi"><span>LLM provider attempts</span><strong data-observe-metric="llm_calls">{{ metrics.llm_calls }}</strong><small data-observe-llm-detail>{{ reconciliation.matched_spans }} matched spans &middot; {{ reconciliation.pending_attempts + reconciliation.delayed_attempts }} awaiting</small><button type="button" class="metric-detail-button" data-kpi-detail="llm_calls">Show details <b>&nearr;</b></button></div>
@@ -46,7 +46,8 @@
           <button type="button" class="active" data-kpi-view="date" role="tab">By date</button>
           <button type="button" data-kpi-view="user" role="tab">By learner</button>
         </div>
-        <label data-kpi-date-control>Filter entire popup by date<select data-kpi-date><option value="">All recorded dates</option></select></label>
+        <label data-kpi-date-control>UTC date<select data-kpi-date><option value="">All recorded dates</option></select></label>
+        <div class="kpi-range-control" data-kpi-range-control hidden><label>From UTC date<input type="date" data-kpi-start-date></label><span>to</span><label>To UTC date<input type="date" data-kpi-end-date></label></div>
       </div>
       <div class="kpi-health neutral" data-kpi-health><span data-kpi-health-label>Loading</span><p data-kpi-health-message>Calculating service health&hellip;</p></div>
       <div class="kpi-summary-grid" data-kpi-summary></div>
@@ -66,4 +67,4 @@
   </dialog>
 </section>
 {% endblock %}
-{% block scripts %}<script src="{{ url_for('static', path='/js/observability.js') }}?v=14" defer></script>{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', path='/js/observability.js') }}?v=15" defer></script>{% endblock %}

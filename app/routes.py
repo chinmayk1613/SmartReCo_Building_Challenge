@@ -1014,18 +1014,36 @@ def _observability_date(value: str | None) -> str | None:
         raise HTTPException(status_code=400, detail="Date must use YYYY-MM-DD in UTC") from exc
 
 
+def _observability_date_range(
+    start_date: str | None = None,
+    end_date: str | None = None,
+    selected_date: str | None = None,
+) -> tuple[str | None, str | None]:
+    selected_date = _observability_date(selected_date)
+    start_date = _observability_date(start_date) or selected_date
+    end_date = _observability_date(end_date) or selected_date
+    if start_date and end_date and start_date > end_date:
+        raise HTTPException(status_code=400, detail="Start date must be on or before end date")
+    return start_date, end_date
+
+
 def observability_invocations(
     db: Session,
     user_id: str | None = None,
     selected_date: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
 ) -> list[ServiceInvocation]:
     stmt = select(ServiceInvocation).order_by(ServiceInvocation.started_at.desc())
     if user_id:
         stmt = stmt.where(ServiceInvocation.user_id == user_id)
-    selected_date = _observability_date(selected_date)
-    if selected_date:
-        start = datetime.strptime(selected_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-        stmt = stmt.where(ServiceInvocation.started_at >= start, ServiceInvocation.started_at < start + timedelta(days=1))
+    start_date, end_date = _observability_date_range(start_date, end_date, selected_date)
+    if start_date:
+        start = datetime.strptime(start_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        stmt = stmt.where(ServiceInvocation.started_at >= start)
+    if end_date:
+        end = datetime.strptime(end_date, "%Y-%m-%d").replace(tzinfo=timezone.utc) + timedelta(days=1)
+        stmt = stmt.where(ServiceInvocation.started_at < end)
     return list(db.scalars(stmt).all())
 
 
@@ -1033,14 +1051,17 @@ def observability_snapshot(
     db: Session,
     user_id: str | None = None,
     selected_date: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
 ) -> dict:
     selected_date = _observability_date(selected_date)
+    start_date, end_date = _observability_date_range(start_date, end_date, selected_date)
     all_invocations = observability_invocations(db, user_id)
     available_dates = sorted(
         {as_reporting_time(row.started_at).date().isoformat() for row in all_invocations},
         reverse=True,
     )
-    invocations = observability_invocations(db, user_id, selected_date)
+    invocations = observability_invocations(db, user_id, start_date=start_date, end_date=end_date)
     service_counts: dict[str, int] = {}
     model_counts: dict[str, int] = {}
     for invocation in invocations:
@@ -1069,6 +1090,8 @@ def observability_snapshot(
         "reconciliation": _scoped_reconciliation(db, invocations, user_id),
         "available_dates": available_dates,
         "selected_date": selected_date or "",
+        "selected_start_date": start_date or "",
+        "selected_end_date": end_date or "",
     }
 
 
@@ -1536,8 +1559,11 @@ def observability_detail(
     metric: str,
     user_id: str | None = None,
     selected_date: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
 ) -> dict:
     selected_date = _observability_date(selected_date)
+    start_date, end_date = _observability_date_range(start_date, end_date, selected_date)
     definition = OBSERVABILITY_DETAIL_DEFINITIONS[metric]
     rows = observability_invocations(db, user_id)
     if definition["service"]:
@@ -1546,8 +1572,10 @@ def observability_detail(
         {as_reporting_time(row.started_at).date().isoformat() for row in rows},
         reverse=True,
     )
-    if selected_date:
-        rows = [row for row in rows if as_reporting_time(row.started_at).date().isoformat() == selected_date]
+    if start_date:
+        rows = [row for row in rows if as_reporting_time(row.started_at).date().isoformat() >= start_date]
+    if end_date:
+        rows = [row for row in rows if as_reporting_time(row.started_at).date().isoformat() <= end_date]
     users = {user.id: user for user in db.scalars(select(User)).all()}
     by_date: dict[str, list[ServiceInvocation]] = {}
     by_user: dict[str, list[ServiceInvocation]] = {}
@@ -1591,6 +1619,8 @@ def observability_detail(
         "users_by_date": users_by_date,
         "available_dates": available_dates,
         "selected_date": selected_date or "",
+        "selected_start_date": start_date or "",
+        "selected_end_date": end_date or "",
         "date_grain": "UTC day",
         "generated_at": iso_utc(utcnow()),
         "insights": _metric_insights(metric, rows, db),
@@ -1600,14 +1630,21 @@ def observability_detail(
 
 
 @router.get("/admin/observability", response_class=HTMLResponse)
-def admin_observability(request: Request, date: str | None = None, db: Session = Depends(get_db)):
+def admin_observability(
+    request: Request,
+    date: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    db: Session = Depends(get_db),
+):
     require_admin(request, db)
-    snapshot = observability_snapshot(db, selected_date=date)
+    snapshot = observability_snapshot(db, selected_date=date, start_date=start_date, end_date=end_date)
     return templates.TemplateResponse(
         request,
         "admin/observability.html",
         context(
-            request, db, selected_date=snapshot["selected_date"], available_dates=snapshot["available_dates"],
+            request, db, selected_date=snapshot["selected_date"], selected_start_date=snapshot["selected_start_date"],
+            selected_end_date=snapshot["selected_end_date"], available_dates=snapshot["available_dates"],
             invocations=snapshot["invocations"][:150], metrics=snapshot["metrics"], service_counts=snapshot["service_counts"], model_counts=snapshot["model_counts"],
             reconciliation=snapshot["reconciliation"],
             user_lookup={user.id: user for user in db.scalars(select(User)).all()},
@@ -1618,9 +1655,15 @@ def admin_observability(request: Request, date: str | None = None, db: Session =
 
 
 @router.get("/api/admin/observability")
-def admin_observability_api(request: Request, date: str | None = None, db: Session = Depends(get_db)):
+def admin_observability_api(
+    request: Request,
+    date: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    db: Session = Depends(get_db),
+):
     require_admin(request, db)
-    snapshot = observability_snapshot(db, selected_date=date)
+    snapshot = observability_snapshot(db, selected_date=date, start_date=start_date, end_date=end_date)
     user_lookup = {user.id: user for user in db.scalars(select(User)).all()}
     return {
         "metrics": snapshot["metrics"],
@@ -1629,6 +1672,8 @@ def admin_observability_api(request: Request, date: str | None = None, db: Sessi
         "reconciliation": snapshot["reconciliation"],
         "available_dates": snapshot["available_dates"],
         "selected_date": snapshot["selected_date"],
+        "selected_start_date": snapshot["selected_start_date"],
+        "selected_end_date": snapshot["selected_end_date"],
         "items": [
             {
                 "id": row.id,
@@ -1667,12 +1712,14 @@ def admin_observability_details_api(
     metric: str,
     user_id: str | None = None,
     date: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
     db: Session = Depends(get_db),
 ):
     require_admin(request, db)
     if metric not in OBSERVABILITY_DETAIL_DEFINITIONS:
         raise HTTPException(status_code=400, detail="Unsupported observability metric")
-    return observability_detail(db, metric, user_id, date)
+    return observability_detail(db, metric, user_id, date, start_date, end_date)
 
 
 @router.get("/admin/deliveries", response_class=HTMLResponse)
