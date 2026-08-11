@@ -1,6 +1,6 @@
 # SmartReco
 
-SmartReco is an end-to-end behavioral AI recommendation platform. It captures meaningful storefront activity without blocking the browser, derives inspectable behavioral signals, maintains a decayed user-interest profile, retrieves verified catalog products with RAG, and uses LangGraph to generate and persist grounded recommendations.
+SmartReco is an end-to-end behavioral AI recommendation platform. It captures meaningful storefront activity without blocking the browser, derives inspectable behavioral signals, maintains a decayed user-interest profile, retrieves verified catalog products with RAG, and uses LangGraph to generate and persist grounded recommendations(Youtube Explanation Video - https://youtu.be/eejNA2ih5TU).
 
 ## Implemented architecture
 
